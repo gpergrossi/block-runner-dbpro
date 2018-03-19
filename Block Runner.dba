@@ -1,0 +1,3509 @@
+Rem Project: Block Runner
+Rem Created: 1/21/2009 4:24:19 PM
+
+Rem ***** NOTES *****
+`---Window Functions---
+`Window(1) = Save Changes And Quit Window (0: Closed  1:Open  2:Mark Close After Save)
+`Window(2) = Save Window (0:Closed  1:Load Save List  2:Open)
+`Window(3) = Delete/Rename Dropdown Window (0:Closed  1:Open)
+`Window(4) = Delete Prompt (0:Closed  1:Open)
+`Window(5) = Rename TextBox (0:Closed  1:Open)
+`Window(6) = Rename Overwrite Prompt (0:Closed  1:Open)
+`Window(7) = Load Window (0:Closed  1:Load Save List  2:Open)
+`Window(8) = Overwrite Save (0:Closed  1:Open)
+`Window(9) = File Doesnt Exist (0:Closed  1:Open)
+`Window(10) = Save Changes Before Loading (0: Closed  1:Open  2:Mark Load After Save)
+`Window(11) = Save Changes Before Making New (0: Closed  1:Open  2:Mark Clear After Save)
+`Window(12) = Save Changes Before Loading Clipboard (0: Closed  1:Open  2:Mark Load From Clipboard After Save)
+`Window(13) = Color Schemes (0:Closed  1:Open)
+`Window(14) = Advanced Options (0:Closed  1:Open)
+`
+`---Color Scheme Guide---
+`ColorSheme(1) = Window Color 1 (Light)
+`ColorSheme(2) = Window Color 2 (Dark)
+`ColorSheme(3) = Line Color 1 (Light)
+`ColorSheme(4) = Line Color 2 (Dark)
+`ColorSheme(5) = Game Area
+`ColorSheme(6) = Left Panel Color 1 (Left Side)
+`ColorSheme(7) = Left Panel Color 2 (Right Side)
+`ColorSheme(8) = Text Color
+`ColorSheme(9) = High-lighted Text Color
+`
+`---Adding a Block---
+`Set the NumberOfBlockTypes variable under "Block Array"
+`Write code to grab it from Blocks.bmp under the section "Load and..."
+`Add it to the Image() array with the format Image(Image#,Frame#) = corresponding image under the section "Load and..."
+`Add animation code to the "function DrawBlock()" and "function UpdateBlockAnimations()"
+`Fill out its BlockTypeSolid under "Declare Block Type Arrays" section
+`Write collision code in the "collisions" section below the "play" loop
+`Done!
+`
+`---General Notes---
+`MenuSelect = 5 is a placeholder for an imaginary menu that will cause clicks that
+`               close menues to be stopped before they place blocks on the game area
+`               the click will do nothing and when MenuSelect = 5 is found and later
+`               that loop MenuSelect will be set to 0
+`PlacingDestination is a marker to say that nothing can be done until a destination for
+`                    a portal (block# 12) has been set
+`BlockData(X,Y,Data#) holds variables that blocks need such as the X and Y of a destination for portals (block #12)
+`
+`---Advanced Options---
+`Optional Start Point
+`   Variable - [Choose Start] (Boolean) Lets Player Pick Starting Portal If True
+`Boundary Types, Ex. Walls = Looping, Ceiling = Brown, Floor = Spikes
+`Starting Gravity Direction
+`Lives available for levels that use waypoints (block# 7 "green portal")
+`
+`---Block Movement Patterns---
+`Movement types are defined as how the block turns when it runs into other blocks
+`   1 - Block turns clockwise when it hits a block
+`   2 - Block turns counterclockwise when it hits a block
+`   3 - Block turns streight around when it hits a block
+`Current directions is an integer from 1 to 4
+`   1 - 180 degrees (moving left)
+`   2 - 90 degrees (moving up)
+`   3 - 0 degrees (moving right)
+`   4 - 270 degrees (moving down)
+
+`===================================================================================================================================================================================================
+`Main Source File ==================================================================================================================================================================================
+`===================================================================================================================================================================================================
+Set Text Font "MS San Serif" : Set Text Size 16
+Sync On : Backdrop Off : Set Image Colorkey 0,255,0
+
+`Advanced Options Presets
+Global ChooseStart = 1
+Global MaxLives = 3
+Global LeftBoundary = 1
+Global TopBoundary = 2
+Global RightBoundary = 1
+Global BottomBoundary = 4
+Global BoundaryStatic = 0
+Global StartingGravity = 1
+Global ImageOverlay$ = ""
+Global BestFPS = 30
+Global Coins = 0
+Global PlayingCampaign As Boolean
+PlayingCampaign = 0
+ViewCoordinates = 0
+
+`Set which blocks can be used as boundaries
+TotalBoundaries = 14
+Dim Boundary(TotalBoundaries)
+Boundary(1) = 1
+Boundary(2) = 2
+Boundary(3) = 3
+Boundary(4) = 4
+Boundary(5) = 8
+Boundary(6) = 9
+Boundary(7) = 10
+Boundary(8) = 11
+Boundary(9) = 12
+Boundary(10) = 13
+Boundary(11) = 14
+Boundary(12) = 15
+Boundary(13) = 16
+Boundary(14) = 17
+
+`Block Array
+Dim Block(40,30)
+Dim BlockData(40,30,3) `First Two Are Teleport Destination X and Y, third is time since last automation
+Dim BlockData$(40,30,1) `First one is a file destination for portals
+Dim BlockMove(40,30,2) `First Is Turning Type (See Notes). Second Is Current Direction (Also See Notes).
+Dim BlockSelected(3)
+Global NumberOfBlockTypes As Integer
+BlockSelected(1) = 1
+BlockSelected(2) = 0
+BlockSelected(3) = 0
+NumberOfBlockTypes = 26 `This says that there is a block with an ID anywhere from 0 to this number.
+
+`Character Variables
+Global CharacterX#
+Global CharacterY#
+
+`Color Scheme Array
+Dim ColorScheme(9)
+
+If File Exist("Options.cfg") = 0
+   Open To Write 1,"Options.cfg"
+   Close File 1
+EndIf
+
+Open To Read 1,"Options.cfg"
+   Read String 1,String$
+   ColorScheme(1) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Window Color 1
+   Read String 1,String$
+   ColorScheme(2) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Window Color 2
+   Read String 1,String$
+   ColorScheme(3) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Line Color 1
+   Read String 1,String$
+   ColorScheme(4) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Line Color 2
+   Read String 1,String$
+   ColorScheme(5) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Game Area
+   Read String 1,String$
+   ColorScheme(6) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Left Panel 1
+   Read String 1,String$
+   ColorScheme(7) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Left Panel 2
+   Read String 1,String$
+   ColorScheme(8) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `Text Color
+   Read String 1,String$
+   ColorScheme(9) = RGB(Val(SplitString(String$,",",1)),Val(SplitString(String$,",",2)),Val(SplitString(String$,",",3))) `High-Lighted Text Color
+Close File 1
+
+`Global Window Variables
+Global DragWindow = 0
+Global OffsetX = 0
+Global OffsetY = 0
+Global ScrollButtonTimer = 0
+Global TextBoxSelected = 0
+Global MenuSelect = 0
+Global Saved = 1
+Global Grid = 0
+Global Loops = 0
+Global Edit = 0
+Global Play = 0
+
+`Text Box Array
+Dim TextBox$(3)
+
+`Slider Arrays
+Dim ColorSlider#(9,3)
+For S = 1 To 9
+   ColorSlider#(S,1) = RGBR(ColorScheme(S))
+   ColorSlider#(S,2) = RGBG(ColorScheme(S))
+   ColorSlider#(S,3) = RGBB(ColorScheme(S))
+Next S
+
+`Scroll Bar Arrays
+Dim ScrollY#(1)
+Dim ScrollHeight(1)
+Dim ScrollLeft(1)
+Dim ScrollRight(1)
+Global ScrollMouseZ
+
+`Scroll Bar Predefinitions
+ScrollLeft(1) = 100
+ScrollRight(1) = 116
+ScrollY#(1) = 100
+ScrollHeight(1) = 10
+
+`Window Arrays
+Dim Window(14)
+Dim WindowX(14)
+Dim WindowY(14)
+Dim WindowWidth(14)
+Dim WindowHeight(14)
+
+`Window Predefinitions
+Window(1) = 0 : WindowWidth(1) = 200 : WindowHeight(1) = 100
+Window(2) = 0 : WindowWidth(2) = 400 : WindowHeight(2) = 300
+Window(3) = 0 : WindowWidth(3) = 100 : WindowHeight(3) = 50
+Window(4) = 0 : WindowWidth(4) = 200 : WindowHeight(4) = 100
+Window(5) = 0 : WindowWidth(5) = 400 : WindowHeight(5) = 50
+Window(6) = 0 : WindowWidth(6) = 200 : WindowHeight(6) = 100
+Window(7) = 0 : WindowWidth(7) = 400 : WindowHeight(7) = 300
+Window(8) = 0 : WindowWidth(8) = 200 : WindowHeight(8) = 100
+Window(9) = 0 : WindowWidth(9) = 300 : WindowHeight(9) = 115
+Window(10) = 0 : WindowWidth(10) = 200 : WindowHeight(10) = 100
+Window(11) = 0 : WindowWidth(11) = 200 : WindowHeight(11) = 100
+Window(12) = 0 : WindowWidth(12) = 200 : WindowHeight(12) = 100
+Window(13) = 0 : WindowWidth(13) = 700 : WindowHeight(13) = 380
+Window(14) = 0 : WindowWidth(14) = 400 : WindowHeight(14) = 400
+
+`Load Character Sprites
+If File Exist("Images\Character\Jump.BMP") = 0
+   Make File "Where are you.txt"
+   Exit Prompt "Missing file: Images\Character\Jump.bmp","Missing File"
+   End
+EndIf
+If File Exist("Images\Character\Kick.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Kick.bmp","Missing File"
+   End
+EndIf
+If File Exist("Images\Character\Slide.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Slide.bmp","Missing File"
+   End
+EndIf
+If File Exist("Images\Character\Squat.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Squat.bmp","Missing File"
+   End
+EndIf
+If File Exist("Images\Character\Stand.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Stand.bmp","Missing File"
+   End
+EndIf
+If File Exist("Images\Character\Reach.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Reach.bmp","Missing File"
+   End
+EndIf
+If File Exist("Images\Character\Walk.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Walk.bmp","Missing File"
+   End
+EndIf
+
+Load Image "Images\Character\Jump.BMP",1,1
+Load Image "Images\Character\Kick.BMP",2,1
+Load Image "Images\Character\Slide.BMP",3,1
+Load Image "Images\Character\Squat.BMP",4,1
+Load Image "Images\Character\Stand.BMP",5,1
+Load Image "Images\Character\Reach.BMP",6,1
+Load Image "Images\Character\Walk.BMP",7,1
+
+`Make Grid Image Number 8
+Create Bitmap 1,640,480
+Set Current Bitmap 1
+Box 0,0,640,480,RGB(0,255,0),RGB(0,255,0),RGB(0,255,0),RGB(0,255,0)
+Ink RGB(17,29,32),0
+For X = 0 To 640 Step 16
+   Line X,0,X,480
+   Line X-1,0,X-1,480
+Next X
+For Y = 0 To 480 Step 16
+   Line 0,Y,640,Y
+   Line 0,Y-1,640,Y-1
+Next Y
+Get Image 8,0,0,640,480,1
+Set Current Bitmap 0
+Delete Bitmap 1
+
+`=====================================================================================================================
+`=================================Load and Manipulate Images For Animation And Rendering==============================
+`=====================================================================================================================
+If File Exist("Images\Character\Blocks.BMP") = 0
+   Exit Prompt "Missing file: Images\Character\Blocks.bmp","Missing File"
+   End
+EndIf
+
+Create Bitmap 1,425,425
+Set Current Bitmap 1
+Set Image Colorkey 0,255,0
+Load Image "Images\Character\Blocks.bmp",9,1
+Paste Image 9,0,0,1
+Set Image Colorkey 0,0,0
+
+Type SolidData
+   Top As Boolean
+   Bottom As Boolean
+   Left As Boolean
+   Right As Boolean
+   ToMoving As Boolean
+EndType
+
+`Declare Block Type Arrays
+Global Dim Image(NumberOfBlockTypes,8)
+Global Dim BlockAnimationStage(NumberOfBlockTypes)
+Global Dim BlockTypeSolid(NumberOfBlockTypes) As SolidData
+UpdateBlockAnimations(0)
+
+BlockTypeSolid(0).Top = 0 : BlockTypeSolid(0).Bottom = 0 : BlockTypeSolid(0).Left = 0 : BlockTypeSolid(0).Right = 0 : BlockTypeSolid(0).ToMoving = 0 `Clear
+BlockTypeSolid(1).Top = 1 : BlockTypeSolid(1).Bottom = 1 : BlockTypeSolid(1).Left = 1 : BlockTypeSolid(1).Right = 1 : BlockTypeSolid(1).ToMoving = 1 `Brown
+BlockTypeSolid(2).Top = 1 : BlockTypeSolid(2).Bottom = 1 : BlockTypeSolid(2).Left = 1 : BlockTypeSolid(2).Right = 1 : BlockTypeSolid(2).ToMoving = 1 `Black
+BlockTypeSolid(3).Top = 1 : BlockTypeSolid(3).Bottom = 1 : BlockTypeSolid(3).Left = 1 : BlockTypeSolid(3).Right = 1 : BlockTypeSolid(3).ToMoving = 1 `Ice
+BlockTypeSolid(4).Top = 0 : BlockTypeSolid(4).Bottom = 0 : BlockTypeSolid(4).Left = 0 : BlockTypeSolid(4).Right = 0 : BlockTypeSolid(4).ToMoving = 1 `Spike
+BlockTypeSolid(5).Top = 0 : BlockTypeSolid(5).Bottom = 0 : BlockTypeSolid(5).Left = 0 : BlockTypeSolid(5).Right = 0 : BlockTypeSolid(5).ToMoving = 0 `Yellow Portal
+BlockTypeSolid(6).Top = 0 : BlockTypeSolid(6).Bottom = 0 : BlockTypeSolid(6).Left = 0 : BlockTypeSolid(6).Right = 0 : BlockTypeSolid(6).ToMoving = 0 `Blue Portal
+BlockTypeSolid(7).Top = 0 : BlockTypeSolid(7).Bottom = 0 : BlockTypeSolid(7).Left = 0 : BlockTypeSolid(7).Right = 0 : BlockTypeSolid(7).ToMoving = 0 `Green Portal
+BlockTypeSolid(8).Top = 1 : BlockTypeSolid(8).Bottom = 1 : BlockTypeSolid(8).Left = 1 : BlockTypeSolid(8).Right = 1 : BlockTypeSolid(8).ToMoving = 1 `Conveyor
+BlockTypeSolid(9).Top = 1 : BlockTypeSolid(9).Bottom = 1 : BlockTypeSolid(9).Left = 1 : BlockTypeSolid(9).Right = 1 : BlockTypeSolid(9).ToMoving = 1 `Conveyor
+BlockTypeSolid(10).Top = 1 : BlockTypeSolid(10).Bottom = 1 : BlockTypeSolid(10).Left = 1 : BlockTypeSolid(10).Right = 1 : BlockTypeSolid(10).ToMoving = 1 `Conveyor
+BlockTypeSolid(11).Top = 1 : BlockTypeSolid(11).Bottom = 1 : BlockTypeSolid(11).Left = 1 : BlockTypeSolid(11).Right = 1 : BlockTypeSolid(11).ToMoving = 1 `Conveyor
+BlockTypeSolid(12).Top = 0 : BlockTypeSolid(12).Bottom = 0 : BlockTypeSolid(12).Left = 0 : BlockTypeSolid(12).Right = 0 : BlockTypeSolid(12).ToMoving = 0 `Purple Portal
+BlockTypeSolid(13).Top = 1 : BlockTypeSolid(13).Bottom = 1 : BlockTypeSolid(13).Left = 1 : BlockTypeSolid(13).Right = 1 : BlockTypeSolid(13).ToMoving = 1 `Sticky Block
+BlockTypeSolid(14).Top = 1 : BlockTypeSolid(14).Bottom = 1 : BlockTypeSolid(14).Left = 1 : BlockTypeSolid(14).Right = 1 : BlockTypeSolid(14).ToMoving = 1 `Gravity
+BlockTypeSolid(15).Top = 1 : BlockTypeSolid(15).Bottom = 1 : BlockTypeSolid(15).Left = 1 : BlockTypeSolid(15).Right = 1 : BlockTypeSolid(15).ToMoving = 1 `Gravity
+BlockTypeSolid(16).Top = 1 : BlockTypeSolid(16).Bottom = 1 : BlockTypeSolid(16).Left = 1 : BlockTypeSolid(16).Right = 1 : BlockTypeSolid(16).ToMoving = 1 `Gravity
+BlockTypeSolid(17).Top = 1 : BlockTypeSolid(17).Bottom = 1 : BlockTypeSolid(17).Left = 1 : BlockTypeSolid(17).Right = 1 : BlockTypeSolid(17).ToMoving = 1 `Gravity
+BlockTypeSolid(18).Top = 0 : BlockTypeSolid(18).Bottom = 0 : BlockTypeSolid(18).Left = 0 : BlockTypeSolid(18).Right = 0 : BlockTypeSolid(18).ToMoving = 1 `Editable Area
+BlockTypeSolid(19).Top = 1 : BlockTypeSolid(19).Bottom = 0 : BlockTypeSolid(19).Left = 0 : BlockTypeSolid(19).Right = 0 : BlockTypeSolid(19).ToMoving = 1 `1-Way Platform
+BlockTypeSolid(20).Top = 0 : BlockTypeSolid(20).Bottom = 0 : BlockTypeSolid(20).Left = 0 : BlockTypeSolid(20).Right = 1 : BlockTypeSolid(20).ToMoving = 1 `1-Way Platform
+BlockTypeSolid(21).Top = 0 : BlockTypeSolid(21).Bottom = 1 : BlockTypeSolid(21).Left = 0 : BlockTypeSolid(21).Right = 0 : BlockTypeSolid(21).ToMoving = 1 `1-Way Platform
+BlockTypeSolid(22).Top = 0 : BlockTypeSolid(22).Bottom = 0 : BlockTypeSolid(22).Left = 1 : BlockTypeSolid(22).Right = 0 : BlockTypeSolid(22).ToMoving = 1 `1-Way Platform
+BlockTypeSolid(23).Top = 1 : BlockTypeSolid(23).Bottom = 1 : BlockTypeSolid(23).Left = 1 : BlockTypeSolid(23).Right = 1 : BlockTypeSolid(23).ToMoving = 1 `Pop Falling Block
+BlockTypeSolid(24).Top = 0 : BlockTypeSolid(24).Bottom = 0 : BlockTypeSolid(24).Left = 0 : BlockTypeSolid(24).Right = 0 : BlockTypeSolid(24).ToMoving = 0 `Block Portal
+BlockTypeSolid(25).Top = 0 : BlockTypeSolid(25).Bottom = 0 : BlockTypeSolid(25).Left = 0 : BlockTypeSolid(25).Right = 0 : BlockTypeSolid(25).ToMoving = 0 `Coin
+BlockTypeSolid(26).Top = 0 : BlockTypeSolid(26).Bottom = 0 : BlockTypeSolid(26).Left = 0 : BlockTypeSolid(26).Right = 0 : BlockTypeSolid(26).ToMoving = 1 `Moving Block Stopper
+
+Image(0,1) = 10 `Clear
+Get Image 10,0,0,16,16,1
+
+Image(1,1) = 11 `Brown
+Get Image 11,17,0,33,16,1
+
+Image(2,1) = 12 `Black
+Get Image 12,34,0,50,16,1
+
+For X = 1 To 5 `1:Ice  2:Shine 1  3:Shine 2  4:Shine 3  5:Shine 4
+   Image(3,X) = 12+X
+   Get Image 12+X,((X+3)-1)*17,0,((X+3)*17)-1,16,1
+Next X
+
+Image(4,1) = 18 `Mine
+Get Image 18,136,0,152,16,1
+
+For X = 1 To 5 `Yellow portal
+   Image(5,X) = 18+X
+   Get Image 18+X,((X+9)-1)*17,0,((X+9)*17)-1,16,1
+Next X
+
+For X = 1 To 5 `Blue portal
+   Image(6,X) = 23+X
+   Get Image 23+X,((X+14)-1)*17,0,((X+14)*17)-1,16,1
+Next X
+
+For X = 1 To 5 `Green portal
+   Image(7,X) = 28+X
+   Get Image 28+X,((X+19)-1)*17,0,((X+19)*17)-1,16,1
+Next X
+
+For X = 1 To 3 `Conveyor Down
+   Image(8,X) = 33+X
+   Get Image 33+X,((X+0)-1)*17,17,((X+0)*17)-1,33,1
+Next X
+
+For X = 1 To 3 `Conveyor Up
+   Image(9,X) = 36+X
+   Get Image 36+X,((X+3)-1)*17,17,((X+3)*17)-1,33,1
+Next X
+
+For X = 1 To 3 `Conveyor Right
+   Image(10,X) = 39+X
+   Get Image 39+X,((X+6)-1)*17,17,((X+6)*17)-1,33,1
+Next X
+
+For X = 1 To 3 `Conveyor Left
+   Image(11,X) = 42+X
+   Get Image 42+X,((X+9)-1)*17,17,((X+9)*17)-1,33,1
+Next X
+
+For X = 1 To 8 `Purple Portal
+   Image(12,X) = 45+X
+   Get Image 45+X,((X+12)-1)*17,17,((X+12)*17)-1,33,1
+Next X
+
+Image(13,1) = 54 `Sticky Block
+Get Image 54,340,17,356,33,1
+
+For X = 1 To 4 `1:Gravity Down
+   Image(14,X) = 54+X
+   Get Image 54+X,((X+0)-1)*17,34,((X+0)*17)-1,50,1
+Next X
+
+For X = 1 To 4 `1:Gravity Left
+   Image(15,X) = 58+X
+   Get Image 58+X,((X+4)-1)*17,34,((X+4)*17)-1,50,1
+Next X
+
+For X = 1 To 4 `1:Gravity Up
+   Image(16,X) = 62+X
+   Get Image 62+X,((X+8)-1)*17,34,((X+8)*17)-1,50,1
+Next X
+
+For X = 1 To 4 `1:Gravity Right
+   Image(17,X) = 66+X
+   Get Image 66+X,((X+12)-1)*17,34,((X+12)*17)-1,50,1
+Next X
+
+For X = 1 To 3 `Clockwise Rotation Pattern (71 72 73)
+   Get Image 70+X,357,((X+1)-1)*17,373,((X+1)*17)-1,1
+Next X
+
+For X = 1 To 3 `Counterclockwise Rotation Pattern (74 75 76)
+   Get Image 73+X,374,((X+1)-1)*17,390,((X+1)*17)-1,1
+Next X
+
+For X = 1 To 3 `180 Rotation Pattern (77 78 79)
+   Get Image 76+X,391,((X+1)-1)*17,407,((X+1)*17)-1,1
+Next X
+
+For X = 1 To 2 `Moving Block Arrow Left (80 81)
+   Get Image 79+X,289,((X+2)-1)*17,305,((X+2)*17)-1,1
+Next X
+
+For X = 1 To 2 `Moving Block Arrow Up (82 83)
+   Get Image 81+X,306,((X+2)-1)*17,322,((X+2)*17)-1,1
+Next X
+
+For X = 1 To 2 `Moving Block Arrow Right (84 85)
+   Get Image 83+X,323,((X+2)-1)*17,339,((X+2)*17)-1,1
+Next X
+
+For X = 1 To 2 `Moving Block Arrow Down (86 87)
+   Get Image 85+X,340,((X+2)-1)*17,356,((X+2)*17)-1,1
+Next X
+
+Image(18,1) = 88 `Editing Area
+Get Image 88,272,((3)-1)*17,288,((3)*17)-1,1
+
+Image(19,1) = 89 `1-Way Platform Up
+Get Image 89,0,3*17,(1*17)-1,(4*17)-1,1
+
+Image(20,1) = 90 `1-Way Platform Right
+Get Image 90,17,3*17,(2*17)-1,(4*17)-1,1
+
+Image(21,1) = 91 `1-Way Platform Down
+Get Image 91,2*17,3*17,(3*17)-1,(4*17)-1,1
+
+Image(22,1) = 92 `1-Way Platform Left
+Get Image 92,3*17,3*17,(4*17)-1,(4*17)-1,1
+
+Image(23,1) = 93 `Pop Falling Block
+Get Image 93,4*17,3*17,(5*17)-1,(4*17)-1,1
+
+For X = 1 To 5 `Copy Block
+   Image(24,X) = 93+X
+   Get Image 93+X,((X+5)-1)*17,51,((X+5)*17)-1,67,1
+Next X
+
+For X = 1 To 4 `Coin
+   Image(25,X) = 98+X
+   Get Image 98+X,((X+10)-1)*17,51,((X+10)*17)-1,67,1
+Next X
+
+For X = 1 To 4 `Coin
+   Image(26,X) = 98+X
+   Get Image 98+X,((X+10)-1)*17,51,((X+10)*17)-1,67,1
+Next X
+
+For X = 1 To 4 `Moving Block Stopper
+   Image(26,X) = 102+X
+   Get Image 102+X,((X+17)-1)*17,68,((X+17)*17)-1,84,1
+Next X
+
+Set Current Bitmap 0
+Delete Bitmap 1
+
+`=====================================================================================================================
+`===========================================================END=======================================================
+`=====================================================================================================================
+
+`Set Directory Paths
+Global FolderPath$ = ""
+FolderPath$ = Get DIR$()
+
+`Check for or make the Saves folder
+Find First
+FileType = 0
+FolderFound = 0
+While FileType <> -1
+   If Get File Name$() = "Saves" And Get File Type() = 1 Then FolderFound = 1
+   FileType = Get File Type()
+   If FileType <> -1 Then Find Next
+EndWhile
+If FolderFound = 0
+   Make Directory "Saves"
+EndIf
+
+`Store Save Path
+Global SavePath$ = ""
+SavePath$ = FolderPath$+"\Saves"
+
+PlacingDestination = 0
+Loops = 0
+UpdateBlockAnimations(Loops)
+
+`===================================================================================================================================================================================================
+`Choose A Character Profile=========================================================================================================================================================================
+`===================================================================================================================================================================================================
+
+PlayingCampaign = 1
+If LoadLevel("Lobby.txt")
+   Goto Play
+Else
+   PlayingCampaign = 0
+EndIf
+
+`===================================================================================================================================================================================================
+`===================================================================================================================================================================================================
+`Main Loop =========================================================================================================================================================================================
+`===================================================================================================================================================================================================
+`===================================================================================================================================================================================================
+
+Do
+   Edit:    `Edit Loop
+   Edit = 1
+   While Edit = 1
+      StartTime = Timer()
+      Cls
+
+      `Determine if user is allowed to place blocks on the main screen
+      ClicksAllowed = 1 `Yes by default
+      For W = 1 To 12   `If any windows ae open, then no
+         If Window(W) > 0 Then ClicksAllowed = 0
+      Next W   `If a windows is  being draged or a menu is open then no
+      If DragWindow <> 0 Or MenuSelect <> 0 Or Window(14) > 0 Or Window(13) = 1 Then ClicksAllowed = 0
+
+      `Draw Panel
+      Box 640,20,800,500,ColorScheme(7),ColorScheme(7),ColorScheme(8),ColorScheme(8)
+      Box 648,58,792,402,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 649,59,791,401,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 650,60,790,400,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      `Draw blocks for side panel and allow selecting
+      Set Image Colorkey 0,255,0
+      Number = 0
+      For Y = 1 To 10
+         For X = 1 To 7
+            If Number <= NumberOfBlockTypes
+               DrawBlock(Number,652+((X-1)*20),62+((Y-1)*20))
+               If MouseX() > 651+((X-1)*20) And MouseY() > 61+((Y-1)*20) And MouseX() < 668+((X-1)*20) And MouseY() < 78+((Y-1)*20) And PlacingDestination = 0 And ClicksAllowed = 1
+                  If MouseClick() = 1 Then BlockSelected(1) = Number
+                  If MouseClick() = 2 Then BlockSelected(2) = Number
+               EndIf
+               If Number = 0
+                  Ink RGB(128,128,128),0
+                  Line 651+((X-1)*20),61+((Y-1)*20),668+((X-1)*20),61+((Y-1)*20)
+                  Line 651+((X-1)*20),61+((Y-1)*20),651+((X-1)*20),78+((Y-1)*20)
+                  Line 668+((X-1)*20),61+((Y-1)*20),668+((X-1)*20),78+((Y-1)*20)
+                  Line 651+((X-1)*20),78+((Y-1)*20),668+((X-1)*20),78+((Y-1)*20)
+               EndIf
+            EndIf
+            Number = Number + 1
+         Next Y
+      Next X
+      Box 648,32,664,48,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      Box 670,32,686,48,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      DrawBlock(BlockSelected(1),648,32)
+      DrawBlock(BlockSelected(2),670,32)
+      `Draw Game Area
+      Box 0,20,640,500,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      If Grid = 1 Then Paste Image 8,0,20,1
+      `Draw Blocks In Game Window
+      Set Image Colorkey 0,255,0
+      For X = 1 To 40
+         For Y = 1 To 30
+            DrawBlock(Block(X,Y),(X-1)*16,(Y-1)*16+20)
+         Next Y
+      Next X
+
+      If TakeScreenShot = 1
+         TakeScreenShot = 0
+         If Image Exist(1002) Then Delete Image 1002
+         Get Image 1002,0,20,640,500,1
+         CD FolderPath$
+         NumberThatExist = 0
+         While File Exist("Images\Screenshots\"+CurrentlyLoaded$+Str$(NumberThatExist)+".bmp") = 1
+            Inc NumberThatExist
+         EndWhile
+         SaveImageName$ = "Images\Screenshots\"+CurrentlyLoaded$+Str$(NumberThatExist)+".bmp"
+         Save Image SaveImageName$,1002
+         CD SavePath$
+      EndIf
+
+      `Find MouseTileX MouseTileY
+      Ink ColorScheme(5),0
+      MX = (MouseX()/16)+1
+      If MX > 40 Then MX = 40
+      If MX < 0 Then MX = 0
+      MY = ((MouseY()-20)/16)+1
+      If MY < 0 Then MY = 0
+      If MY > 30 Then MY = 30
+      `Draw Tiles
+      If MouseX() > 0 And MouseY() > 20 And MouseX() < 640 And MouseY() < 500
+         If MouseClick() = 0 Then PlaceLock = 0
+         If PlacingDestination = 1 And MX > 0 And MY > 0
+            Line (PlacingDestinationX-1)*16+8,(PlacingDestinationY-1)*16+28,(MX-1)*16+8,(MY-1)*16+28
+            If MouseClick() = 1 And PlaceLock = 0
+               BlockData(PlacingDestinationX,PlacingDestinationY,1) = MX
+               BlockData(PlacingDestinationX,PlacingDestinationY,2) = MY
+               PlacingDestination = 0
+               PlaceLock = 2
+            EndIf
+         EndIf
+         If ClicksAllowed = 1 And PlacingDestination = 0 And PlaceLock < 2
+            If MouseClick() = 1
+               Block(MX,MY) = BlockSelected(1)
+               Saved = 0
+               PlaceLock = 1
+               BlockData(MX,MY,1) = 0
+               BlockData(MX,MY,2) = 0
+            EndIf
+            If MouseClick() = 2
+               Block(MX,MY) = BlockSelected(2)
+               Saved = 0
+               PlaceLock = 1
+               BlockData(MX,MY,1) = 0
+               BlockData(MX,MY,2) = 0
+            EndIf
+            PlacingDestination = 0
+            If MouseClick() = 1 And BlockSelected(1) = 12 Then PlacingDestination = 1
+            If MouseClick() = 2 And BlockSelected(2) = 12 Then PlacingDestination = 1
+            If MouseClick() = 1 And BlockSelected(1) = 24 Then PlacingDestination = 1
+            If MouseClick() = 2 And BlockSelected(2) = 24 Then PlacingDestination = 1
+            PlacingDestinationX = MX
+            PlacingDestinationY = MY
+         EndIf
+      EndIf
+
+      If Block(MX,MY) = 12 And PlacingDestination = 0 And BlockData$(MX,MY) = "" Then Line (MX-1)*16+8,(MY-1)*16+28,(BlockData(MX,MY,1)-1)*16+8,(BlockData(MX,MY,2)-1)*16+28
+      If Block(MX,MY) = 24 And PlacingDestination = 0 Then Line (MX-1)*16+8,(MY-1)*16+28,(BlockData(MX,MY,1)-1)*16+8,(BlockData(MX,MY,2)-1)*16+28
+      If Button(710,30,780,50,"Options") = 2 And ClicksAllowed = 1
+         Window(14) = 1
+         WindowX(14) = 200
+         WindowY(14) = 40
+      EndIf
+      If Button(679,430,719,450,"Play") = 2 And ClicksAllowed = 1 And PlacingDestination = 0 Then Edit = 0
+      If Button(721,430,761,450,"Edit") = 2 And ClicksAllowed = 1 And PlacingDestination = 0 Then Play = 0
+
+      If MousePause > 30
+         Set Image Colorkey 0,255,0
+         If Image Exist(1001) And ImageOverlay$ <> "" Then Paste Image 1001,0,20,1
+      EndIf
+
+      `Draw Menus
+      Gosub Menu
+
+      If MouseMoveX() = 0 And MouseMoveY() = 0
+         MousePause = MousePause + 1
+      Else
+         MousePause = 0
+      EndIf
+
+      Loops = Loops + 1
+      Text Screen Width() - Text Width(Str$(Screen FPS())),2,Str$(Screen FPS())
+      If ViewCoordinates = 1
+         Coordinate$ = "("+Str$(MX)+","+Str$(MY)+")"
+         Text 640 - Text Width(Coordinate$),20,Coordinate$
+      EndIf
+      While Timer()-StartTime < (1000/BestFPS)
+      EndWhile
+      UpdateBlockAnimations(Loops)
+      Sync
+   EndWhile
+
+   `Play Loop
+   LoadChanged = 0
+   PleaseSave = 0
+   For X = 1 To 40
+      For Y = 1 To 30
+         If BlockData$(X,Y,1) <> "" Then PleaseSave = 1
+      Next Y
+   Next X
+
+   If PleaseSave = 1 And Saved = 0
+      Box 140,225,510,325,ColorScheme(2),ColorScheme(1),ColorScheme(2),ColorScheme(1)
+      Ink ColorScheme(5),0
+      Center Text 320,240,"This level contains some portals that have "
+      Center Text 320,260,"destinations in other levels. You MUST save"
+      Center Text 320,280,"before playing. Hit any key to go back.    "
+      Sync
+      Sync
+      Wait Key
+      Goto Edit
+   EndIf
+
+   Play:
+
+   If LoadChanged = 1
+      LoadLevel(CurrentlyLoaded$)
+   EndIf
+
+   Play = 1
+
+   Type Point2D
+      X As Integer
+      Y As Integer
+   EndType
+
+   Type MovingBlockType
+      BlockType As Integer
+      X As Integer
+      Y As Integer
+      Destination As Point2D
+      MovementType As Integer
+      TurningType as Integer
+   EndType
+
+   `Detect Movable Blocks
+   Dim MovingBlock(0) As MovingBlockType
+   Dim StationaryBlock(41,31)
+   Dim StationaryBlockData(41,31,3)
+   Dim StationaryBlockData$(41,31,1)
+   Dim StationaryBlockMove(41,31,2)
+   Dim Drawn(40,30) As Boolean
+   Dim StartX(0)
+   Dim StartY(0)
+   SaveSpotX# = 0
+   SaveSpotY# = 0
+
+   Lives = MaxLives
+   Loops = 0
+   Alive = -2
+   Coins = 0
+
+   LoadForPlayLetOut:
+
+   If Sprite Exist(1) Then Delete Sprite 1
+   If LoadChanged = 1 Then Gosub Menu
+
+   StartOn = 0
+   Create Bitmap 1,640,480
+   Set Current Bitmap 1
+   Box 0,0,640,480,RGB(0,255,0),RGB(0,255,0),RGB(0,255,0),RGB(0,255,0)
+   For X = 1 To 40
+      For Y = 1 To 30
+         Drawn(X,Y) = 0
+         If BlockMove(X,Y,2) = 0
+            StationaryBlock(X,Y) = Block(X,Y)
+            StationaryBlockData(X,Y,1) = BlockData(X,Y,1)
+            StationaryBlockData(X,Y,2) = BlockData(X,Y,2)
+            StationaryBlockData(X,Y,3) = BlockData(X,Y,3)
+            StationaryBlockData$(X,Y,1) = BlockData$(X,Y,1)
+            StationaryBlockMove(X,Y,1) = BlockMove(X,Y,1)
+            StationaryBlockMove(X,Y,2) = BlockMove(X,Y,2)
+            If Block(X,Y) = 5
+               Array Insert At Bottom StartX(0)
+               Array Insert At Bottom StartY(0)
+               StartOn = StartOn + 1
+               StartX(StartOn) = (X-1)*16
+               StartY(StartOn) = (Y-1)*16+20
+            EndIf
+            If Image(Block(X,Y),2) = 0 And Block(X,Y) <> 0 And Block(X,Y) <> 18 And Block(X,Y) <> 23
+               DrawBlock(Block(X,Y),(X-1)*16,(Y-1)*16)
+               Drawn(X,Y) = 1
+            EndIf
+         Else
+            StationaryBlock(X,Y) = 0
+            Array Insert At Bottom MovingBlock(0)
+            MovingBlock(Array Count(MovingBlock(0))).BlockType = Block(X,Y)
+            MovingBlock(Array Count(MovingBlock(0))).X = (X-1)*16
+            MovingBlock(Array Count(MovingBlock(0))).Y = (Y-1)*16+20
+            MovingBlock(Array Count(MovingBlock(0))).Destination.X = BlockData(X,Y,1)
+            MovingBlock(Array Count(MovingBlock(0))).Destination.Y = BlockData(X,Y,2)
+            MovingBlock(Array Count(MovingBlock(0))).TurningType = BlockMove(X,Y,1)
+            MovingBlock(Array Count(MovingBlock(0))).MovementType = BlockMove(X,Y,2)
+         EndIf
+      Next Y
+   Next X
+   Sync
+   Sync
+   Get Image 1000,0,0,640,480,1
+   Set Current Bitmap 0
+   Delete Bitmap 1
+   NumberOfStarts = StartOn
+
+   GravityDirection = StartingGravity
+
+   `Set Boundaries
+   If BoundaryStatic = 0
+      If GravityDirection = 1
+         For X = 0 To 41
+            StationaryBlock(X,0) = Boundary(TopBoundary)
+            StationaryBlock(X,31) = Boundary(BottomBoundary)
+         Next X
+         For Y = 0 To 31
+            StationaryBlock(0,Y) = Boundary(LeftBoundary)
+            StationaryBlock(41,Y) = Boundary(RightBoundary)
+         Next Y
+      EndIf
+      If GravityDirection = 2
+         For X = 0 To 41
+            StationaryBlock(X,0) = Boundary(LeftBoundary)
+            StationaryBlock(X,31) = Boundary(RightBoundary)
+         Next X
+         For Y = 0 To 31
+            StationaryBlock(0,Y) = Boundary(BottomBoundary)
+            StationaryBlock(41,Y) = Boundary(TopBoundary)
+         Next Y
+      EndIf
+      If GravityDirection = 3
+         For X = 0 To 41
+            StationaryBlock(X,0) = Boundary(BottomBoundary)
+            StationaryBlock(X,31) = Boundary(TopBoundary)
+         Next X
+         For Y = 0 To 31
+            StationaryBlock(0,Y) = Boundary(RightBoundary)
+            StationaryBlock(41,Y) = Boundary(LeftBoundary)
+         Next Y
+      EndIf
+      If GravityDirection = 4
+         For X = 0 To 41
+            StationaryBlock(X,0) = Boundary(RightBoundary)
+            StationaryBlock(X,31) = Boundary(LeftBoundary)
+         Next X
+         For Y = 0 To 31
+            StationaryBlock(0,Y) = Boundary(TopBoundary)
+            StationaryBlock(41,Y) = Boundary(BottomBoundary)
+         Next Y
+      EndIf
+   Else
+      For X = 0 To 41
+         StationaryBlock(X,0) = Boundary(TopBoundary)
+         StationaryBlock(X,31) = Boundary(BottomBoundary)
+      Next X
+      For Y = 0 To 31
+         StationaryBlock(0,Y) = Boundary(LeftBoundary)
+         StationaryBlock(41,Y) = Boundary(RightBoundary)
+      Next Y
+   EndIf
+
+   For X = 0 To 41
+      StationaryBlockData(X,0,1) = X
+      StationaryBlockData(X,0,2) = 30
+      StationaryBlockData(X,31,1) = X
+      StationaryBlockData(X,31,2) = 1
+   Next X
+   For Y = 0 To 31
+      StationaryBlockData(0,Y,1) = 40
+      StationaryBlockData(0,Y,2) = Y
+      StationaryBlockData(41,Y,1) = 1
+      StationaryBlockData(41,Y,2) = Y
+   Next Y
+
+   Dim Portal(41,31) As Boolean
+   For X = 0 To 41
+      For Y = 0 To 31
+         If StationaryBlock(X,Y) = 12
+            Portal(X,Y) = 1
+         Else
+            If StationaryBlock(X,Y) = 24
+               Portal(X,Y) = 2
+            Else
+               Portal(X,Y) = 0
+            EndIf
+         EndIf
+         If Portal(X,Y) = 1 And StationaryBlockData$(X,Y,1) = "" Then StationaryBlock(X,Y) = StationaryBlock(StationaryBlockData(X,Y,1),StationaryBlockData(X,Y,2))
+      Next Y
+   Next X
+
+   `Available blocks in edit panel during play
+   Dim AvailableBlock(2) As Integer
+   Dim Editable(40,30) As Boolean
+   NumberOfAvailableBlockTypes As Integer
+   For X = 1 To 40
+      For Y = 1 To 30
+         Editable(X,Y) = 0
+         If Block(X,Y) = 18 Then Editable(X,Y) = 1
+      Next Y
+   Next X
+
+   NumberOfAvailableBlockTypes = 2
+   AvailableBlock(0) = 0
+   AvailableBlock(1) = 1
+   AvailableBlock(2) = 2
+   BlockSelected(1) = 1
+   BlockSelected(2) = 0
+
+   Lives = MaxLives
+   Alive = -2
+
+   If SaveSpotX# > 0 And SaveSpotY# > 20
+      If Array Count(StartX(0)) < 1
+         Array Insert At Bottom StartX(0)
+         Array Insert At Bottom StartY(0)
+         StartOn = StartOn + 1
+      EndIf
+      CX = (SaveSpotX#/16)+1
+      If CX > 40 Then CX = 40
+      If CX < 1 Then CX = 1
+      CY = ((SaveSpotY#-20)/16)+1
+      If CY < 1 Then CY = 1
+      If CY > 30 Then CY = 30
+      StartX(1) = (CX-1)*16
+      StartY(1) = (CY-1)*16+20
+      CharacterX# = SaveSpotX#
+      CharacterY# = SaveSpotY#
+      ChosenX = StartX(1)
+      ChosenY = StartY(1)
+      NumberOfStarts = 1
+      Alive = 1
+      ChooseStart = 0
+   Else
+      LoadChanged = 0
+      CurrentlyLoaded$ = LoadedForPlay$
+   EndIf
+
+   While Play = 1
+      StartTime = Timer()
+      Cls
+
+      `Game Area
+      Box 0,20,640,500,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      `Draw Panel
+      Box 640,20,800,500,ColorScheme(7),ColorScheme(7),ColorScheme(8),ColorScheme(8)
+      Box 648,58,792,402,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 649,59,791,401,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 650,60,790,400,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      ClicksAllowed = 1
+      For W = 1 To 12
+         If Window(W) > 0 Then ClicksAllowed = 0
+      Next W
+      If DragWindow <> 0 Or MenuSelect <> 0 Or Window(14) > 0 Or Window(13) = 1 Then ClicksAllowed = 0
+      `Draw Blocks For Play Editting Panel
+      Set Image Colorkey 0,255,0
+      Paste Image 1000,0,20,1
+      Number = 0
+      For Y = 1 To 10
+         For X = 1 To 7
+            If Number <= NumberOfAvailableBlockTypes
+               DrawBlock(AvailableBlock(Number),652+((X-1)*20),62+((Y-1)*20))
+               If MouseX() > 651+((X-1)*20) And MouseY() > 61+((Y-1)*20) And MouseX() < 668+((X-1)*20) And MouseY() < 78+((Y-1)*20) And PlacingDestination = 0 And ClicksAllowed = 1
+                  If MouseClick() = 1 Then BlockSelected(1) = AvailableBlock(Number)
+                  If MouseClick() = 2 Then BlockSelected(2) = AvailableBlock(Number)
+               EndIf
+               If AvailableBlock(Number) = 0
+                  Ink RGB(128,128,128),0
+                  Line 651+((X-1)*20),61+((Y-1)*20),668+((X-1)*20),61+((Y-1)*20)
+                  Line 651+((X-1)*20),61+((Y-1)*20),651+((X-1)*20),78+((Y-1)*20)
+                  Line 668+((X-1)*20),61+((Y-1)*20),668+((X-1)*20),78+((Y-1)*20)
+                  Line 651+((X-1)*20),78+((Y-1)*20),668+((X-1)*20),78+((Y-1)*20)
+               EndIf
+            EndIf
+            Number = Number + 1
+         Next Y
+      Next X
+      Box 648,32,664,48,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      Box 670,32,686,48,ColorScheme(9),ColorScheme(9),ColorScheme(9),ColorScheme(9)
+      DrawBlock(BlockSelected(1),648,32)
+      DrawBlock(BlockSelected(2),670,32)
+      `Draw Blocks
+      UpdatePortalBlocks = 0
+      Ink ColorScheme(5),0
+      Set Image Colorkey 0,255,0
+      For X = 1 To 40
+         For Y = 1 To 30
+            `Refresh Editable Blocks
+            If Editable(X,Y) = 1
+               If StationaryBlock(X,Y) = 0 Then StationaryBlock(X,Y) = 18
+            EndIf
+            `Make Pop Falling Block Fall
+            If StationaryBlock(X,Y) = 23 And Alive = 1
+               If StationaryBlockData(X,Y,3) = 0
+                  Select GravityDirection
+                     Case 1
+                        If TileSpaceOpen(X,Y+1) = 1
+                           StationaryBlock(X,Y+1) = 23
+                           StationaryBlock(X,Y) = 0
+                           StationaryBlockData(X,Y+1,3) = 10
+                           If X = CharacterTileX And Y+1 = CharacterTileY Then Alive = 0
+                        EndIf
+                     EndCase
+                     Case 2
+                        If TileSpaceOpen(X-1,Y) = 1
+                           StationaryBlock(X-1,Y) = 23
+                           StationaryBlock(X,Y) = 0
+                           StationaryBlockData(X-1,Y,3) = 10
+                           If X-1 = CharacterTileX And Y = CharacterTileY Then Alive = 0
+                        EndIf
+                     EndCase
+                     Case 3
+                        If TileSpaceOpen(X,Y-1) = 1
+                           StationaryBlock(X,Y-1) = 23
+                           StationaryBlock(X,Y) = 0
+                           StationaryBlockData(X,Y-1,3) = 10
+                           If X = CharacterTileX And Y-1 = CharacterTileY Then Alive = 0
+                        EndIf
+                     EndCase
+                     Case 4
+                        If TileSpaceOpen(X+1,Y) = 1
+                           StationaryBlock(X+1,Y) = 23
+                           StationaryBlock(X,Y) = 0
+                           StationaryBlockData(X+1,Y,3) = 10
+                           If X+1 = CharacterTileX And Y = CharacterTileY Then Alive = 0
+                        EndIf
+                     EndCase
+                  EndSelect
+               Else
+                  StationaryBlockData(X,Y,3) = StationaryBlockData(X,Y,3) - 1
+               EndIf
+            EndIf
+            `Make Portals Assume The Collision Of Their Target Block
+            If Portal(X,Y) > 0 And StationaryBlockData$(X,Y,1) = "" Then StationaryBlock(X,Y) = StationaryBlock(StationaryBlockData(X,Y,1),StationaryBlockData(X,Y,2))
+            `Draw
+            If Drawn(X,Y) = 0 And Portal(X,Y) = 0 Then DrawBlock(StationaryBlock(X,Y),(X-1)*16,(Y-1)*16+20)
+            If Drawn(X,Y) = 0 And Portal(X,Y) = 1 Then DrawBlock(12,(X-1)*16,(Y-1)*16+20)
+            If Drawn(X,Y) = 0 And Portal(X,Y) = 2
+               If StationaryBlock(X,Y) <> 18 Then DrawBlock(StationaryBlock(X,Y),(X-1)*16,(Y-1)*16+20)
+               DrawBlock(24,(X-1)*16,(Y-1)*16+20)
+            EndIf
+         Next Y
+      Next X
+      For Block = 1 To Array Count(MovingBlock(0))
+         DrawBlock(MovingBlock(Block).BlockType,MovingBlock(Block).X,MovingBlock(Block).Y)
+      Next Block
+
+      If TakeScreenShot = 1
+         TakeScreenShot = 0
+         If Image Exist(1002) Then Delete Image 1002
+         Get Image 1002,0,20,640,500,1
+         CD FolderPath$
+         NumberThatExist = 0
+         While File Exist("Images\Screenshots\"+CurrentlyLoaded$+Str$(NumberThatExist)+".bmp") = 1
+            Inc NumberThatExist
+         EndWhile
+         SaveImageName$ = "Images\Screenshots\"+CurrentlyLoaded$+Str$(NumberThatExist)+".bmp"
+         Save Image SaveImageName$,1002
+         CD SavePath$
+      EndIf
+
+      `Find Mouse Tile
+      MX = (MouseX()/16)+1
+      If MX > 40 Then MX = 40
+      If MX < 1 Then MX = 1
+      MY = ((MouseY()-20)/16)+1
+      If MY < 1 Then MY = 1
+      If MY > 30 Then MY = 30
+      `Place Blocks
+      If Block(MX,MY) = 12 And PlacingDestination = 0 And BlockData$(MX,MY) = "" Then Line (MX-1)*16+8,(MY-1)*16+28,(BlockData(MX,MY,1)-1)*16+8,(BlockData(MX,MY,2)-1)*16+28
+      If Block(MX,MY) = 24 And PlacingDestination = 0 Then Line (MX-1)*16+8,(MY-1)*16+28,(BlockData(MX,MY,1)-1)*16+8,(BlockData(MX,MY,2)-1)*16+28
+      If Editable(MX,MY) = 1
+         If PlacingDestination = 1 And MX > 0 And MY > 0
+            Line (PlacingDestinationX-1)*16+8,(PlacingDestinationY-1)*16+28,(MX-1)*16+8,(MY-1)*16+28
+            If MouseClick() = 1 And PlaceLock = 0
+               StationaryBlockData(PlacingDestinationX,PlacingDestinationY,1) = MX
+               StationaryBlockData(PlacingDestinationX,PlacingDestinationY,2) = MY
+               PlacingDestination = 0
+               PlaceLock = 2
+            EndIf
+         EndIf
+         If PlacingDestination = 0 And PlaceLock < 2 And Alive = 1 And StationaryBlock(MX,MY) <> 23 And MouseX() > 0 And MouseY() > 20 And MouseX() < 640 And MouseY() < 500
+            If MouseClick() = 1
+               StationaryBlock(MX,MY) = BlockSelected(1)
+               PlaceLock = 1
+               StationaryBlockData(MX,MY,1) = 0
+               StationaryBlockData(MX,MY,2) = 0
+               UpdatePortalBlocks = 1
+               If MX = CharacterTileX And MY = CharacterTileY
+                  If BlockTypeSolid(BlockSelected(1)).Top And BlockTypeSolid(BlockSelected(1)).Left And BlockTypeSolid(BlockSelected(1)).Right And BlockTypeSolid(BlockSelected(1)).Bottom Then Alive = 0
+               EndIf
+            EndIf
+            If MouseClick() = 2
+               StationaryBlock(MX,MY) = BlockSelected(2)
+               PlaceLock = 1
+               StationaryBlockData(MX,MY,1) = 0
+               StationaryBlockData(MX,MY,2) = 0
+               UpdatePortalBlocks = 1
+               If MX = CharacterTileX And MY = CharacterTileY
+                  If BlockTypeSolid(BlockSelected(2)).Top And BlockTypeSolid(BlockSelected(2)).Left And BlockTypeSolid(BlockSelected(2)).Right And BlockTypeSolid(BlockSelected(2)).Bottom Then Alive = 0
+               EndIf
+            EndIf
+            PlacingDestination = 0
+            If MouseClick() = 1 And BlockSelected(1) = 12 Then PlacingDestination = 1
+            If MouseClick() = 2 And BlockSelected(2) = 12 Then PlacingDestination = 1
+            If MouseClick() = 1 And BlockSelected(1) = 24 Then PlacingDestination = 1
+            If MouseClick() = 2 And BlockSelected(2) = 24 Then PlacingDestination = 1
+            PlacingDestinationX = X
+            PlacingDestinationY = Y
+         EndIf
+      EndIf
+      If MouseClick() = 0 Then PlaceLock = 0
+
+      `Buttons
+      If Button(679,430,719,450,"Play") = 2 And ClicksAllowed = 1 Then Edit = 0
+      If Button(721,430,761,450,"Edit") = 2 And ClicksAllowed = 1 Then Play = 0
+      If Alive <> 2
+         If Button(679,430,719,450,"Play") = 2 And ClicksAllowed = 1 Then Edit = 0
+      Else
+         If Button(674,430,719,450,"Replay") = 2 And ClicksAllowed = 1
+            Gosub Menu
+            Sync
+            Goto Play
+         EndIf
+      EndIf
+
+      `Interface
+      If Alive = 1 Then Gosub Interface
+
+      `Character Sprite Paste
+      If Sprite Exist(1)
+         If GravityDirection = 1 Then Paste Sprite 1,CharacterX#,CharacterY#
+         If GravityDirection = 2 Then Paste Sprite 1,CharacterX#-1,CharacterY#
+         If GravityDirection = 3 Then Paste Sprite 1,CharacterX#-2,CharacterY#-1
+         If GravityDirection = 4 Then Paste Sprite 1,CharacterX#,CharacterY#-2
+      EndIf
+
+      `Spawn Animation
+      If SpawnAnimation > 0
+         A# = SpawnAnimation
+         R# = RGBR(ColorScheme(5))-RGBR(ColorScheme(9)) : R# = R#*A#/100.0 : R# = RGBR(ColorScheme(9))+R#
+         G# = RGBG(ColorScheme(5))-RGBG(ColorScheme(9)) : G# = G#*A#/100.0 : G# = RGBR(ColorScheme(9))+G#
+         B# = RGBB(ColorScheme(5))-RGBB(ColorScheme(9)) : B# = B#*A#/100.0 : B# = RGBR(ColorScheme(9))+B#
+         Ink RGB(R#,G#,B#),0
+         For A = 1 To 8
+            Circle SpawnLocationX+Cos(SpawnAnimation*2+(360/8*A))*(51-SpawnAnimation/2),SpawnLocationY+Sin(SpawnAnimation*2+(360/8*A))*(51-SpawnAnimation/2),2
+         Next A
+         SpawnAnimation = SpawnAnimation + 5
+         If SpawnAnimation => 100 Then SpawnAnimation = 0
+      EndIf
+
+      `Death Animation
+      If DeathAnimation > 0
+         A# = DeathAnimation
+         R# = RGBR(ColorScheme(9))-RGBR(ColorScheme(5)) : R# = R#*A#/100.0 : R# = RGBR(ColorScheme(5))+R#
+         G# = RGBG(ColorScheme(9))-RGBG(ColorScheme(5)) : G# = G#*A#/100.0 : G# = RGBR(ColorScheme(5))+G#
+         B# = RGBB(ColorScheme(9))-RGBB(ColorScheme(5)) : B# = B#*A#/100.0 : B# = RGBR(ColorScheme(5))+B#
+         Ink RGB(R#,G#,B#),0
+         For A = 1 To 8
+            Circle DeathLocationX+Cos(DeathAnimation*2+(360/8*A))*(DeathAnimation/2),DeathLocationY+Sin(DeathAnimation*2+(360/8*A))*(DeathAnimation/2),2
+         Next A
+         DeathAnimation = DeathAnimation + 5
+         If DeathAnimation => 100 Then DeathAnimation = 0
+      EndIf
+
+      `Overlay
+      If Image Exist(1001) And ImageOverlay$ <> ""
+         Set Image Colorkey 0,255,0
+         Paste Image 1001,0,20,1
+      EndIf
+
+      `Portal Destinations
+      If MouseY() > 20 And MouseX() < 640 And StationaryBlock(MX,MY) = 12 And PlacingDestination = 0
+         Ink ColorScheme(5),1
+         Line (MX-1)*16+8,(MY-1)*16+28,(StationaryBlockData(MX,MY,1)-1)*16+8,(StationaryBlockData(MX,MY,2)-1)*16+28
+      EndIf
+
+      `Draw Menus
+      Gosub Menu
+
+      `Interface
+      If Alive <> 1 Then Gosub Interface
+
+      Loops = Loops + 1
+      If Alive = 1 Then Time = Time + 1
+      Text Screen Width() - Text Width(Str$(Screen FPS())),2,Str$(Screen FPS())
+      While Timer()-StartTime < (1000/BestFPS)
+      EndWhile
+      Sync
+      UpdateBlockAnimations(Loops)
+   EndWhile
+   PlacingDestination = 0
+   If Sprite Exist(1) Then Delete Sprite 1
+
+   If LoadChanged = 1
+      LoadLevel(CurrentlyLoaded$)
+   EndIf
+   If PlayingCampaign = 1
+      ClearLevelData()
+      PlayingCampaign = 0
+   EndIf
+Loop
+
+LoadForPlay:
+   LoadLevel(StationaryBlockData$(CharacterTileX,CharacterTileY,1))
+   LoadedForPlay$ = StationaryBlockData$(CharacterTileX,CharacterTileY,1)
+   LoadChanged = 1
+Goto LoadForPlayLetOut
+
+Interface:
+   If DeathAnimation = 0
+      If Alive = -2 And ChooseStart = 1 `Player Dead, Choose Start
+         Time = 0
+         LastGravityForBoundary = 0
+         CheckpointInUse = 0
+         ChosenX = 0
+         ChosenY = 0
+         For N = 1 To NumberOfStarts
+            X = StartX(N)
+            Y = StartY(N)
+            If MouseX() > X And MouseY() > Y And MouseX() < X+16 And MouseY() < Y+16
+               ChosenX = X
+               ChosenY = Y
+               For A = 0 To 1
+                  For C = 0 To 1
+                     S# = ((8+((Loops MOD 32)/8))*16-1) : S# = S# / 255 : R = RGBR(ColorScheme(6))*S# : G = RGBG(ColorScheme(6))*S# : B = RGBB(ColorScheme(6))*S#
+                     Ink RGB(R,G,B),0
+                     Circle X+7+A,Y+7+C,8+((Loops MOD 64)/8)
+                     S# = ((0+((Loops MOD 32)/8))*16-1) : S# = S# / 255 : R = RGBR(ColorScheme(6))*S# : G = RGBG(ColorScheme(6))*S# : B = RGBB(ColorScheme(6))*S#
+                     Ink RGB(R,G,B),0
+                     Circle X+7+A,Y+7+C,0+((Loops MOD 64)/8)
+                  Next C
+               Next A
+            Else
+               Ink ColorScheme(5),0
+               Circle X+7,Y+7,14
+               Circle X+8,Y+7,14
+               Circle X+7,Y+8,14
+               Circle X+8,Y+8,14
+            EndIf
+         Next N
+         If NumberofStarts = 1
+            ChosenX = StartX(1)
+            ChosenY = StartY(1)
+            Alive = -1
+         EndIf
+         If NumberofStarts = 0
+            ChosenX = 320
+            ChosenY = 260
+            Alive = -1
+         EndIf
+         Ink RGB(0,0,0),0
+         If ChosenX > 0 Or ChosenY > 0 And NumberofStarts > 1
+            Circle ChosenX+7,ChosenY+7,16
+            Circle ChosenX+7,ChosenY+8,16
+            Circle ChosenX+8,ChosenY+7,16
+            Circle ChosenX+8,ChosenY+8,16
+            If MouseClick() = 1 Then Alive = -1
+         EndIf
+      EndIf
+      If Alive = -2 And ChooseStart = 0 `Player Dead, Assign Start
+         Time = 0
+         LastGravityForBoundary = 0
+         CheckpointInUse = 0
+         If NumberofStarts = 0
+            ChosenX = 320
+            ChosenY = 260
+            Alive = -1
+         Else
+            Number = Rnd(NumberOfStarts - 1) + 1
+            ChosenX = StartX(Number)
+            ChosenY = StartY(Number)
+         EndIf
+         Alive = -1
+      EndIf
+      If Alive = -1 `Place Character At Last Checkpoint
+         If CheckpointInUse = 0
+            Gravity# = 0
+            GravityDirection = StartingGravity
+            CharacterX# = ChosenX + 8.5
+            CharacterY# = ChosenY + 8.5
+         Else
+            Gravity# = 0
+            GravityDirection = CheckpointGravity
+            CharacterX# = (CheckpointX-1)*16+8
+            CharacterY# = (CheckpointY-1)*16+28
+         EndIf
+         SpawnAnimation = 1
+         SpawnLocationX = CharacterX#
+         SpawnLocationY = CharacterY#
+         Jump# = 0
+         Move# = 0
+         WallMove# = 0
+         Ink ColorScheme(5),0
+         Circle CircleX+8,CircleY+8,8
+         Circle CircleX+7,CircleY+8,8
+         Circle CircleX+7,CircleY+7,8
+         Circle CircleX+8,CircleY+7,8
+         If Lives < 10 Then Center Text CircleX+8,CircleY,Str$(Lives)
+         If Lives => 10 Then Center Text CircleX+7,CircleY+3,"*"
+         If Scancode() > 0 And AliveLock = 0 Then Alive = 1
+         Box 139,224,511,326,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+         Box 140,225,510,325,ColorScheme(2),ColorScheme(1),ColorScheme(2),ColorScheme(1)
+         Ink ColorScheme(8),0
+         Backdrop Off
+         Set Text To Bold
+         Set Text Size 24
+         Lifecount$ = Str$(Lives)+" li"
+         If Lives = 1 Then LifeCount$ = LifeCount$ + "fe left."
+         If Lives <> 1 Then LifeCount$ = LifeCount$ + "ves left."
+         Center Text 320,240,LifeCount$
+         Completion# = Time
+         Completion# = Completion#/30
+         Center Text 320,260,"Your time so far is "+Round(Completion#,2)+" seconds."
+         Center Text 320,280,"Press any key to continue"
+         Set Text Size 16
+         Set Text To Normal
+         If CheckpointInUse = 0
+            CircleX = ChosenX
+            CircleY = ChosenY
+         Else
+            CircleX = (CheckpointX-1)*16
+            CircleY = (CheckpointY-1)*16+20
+         EndIf
+      EndIf
+      If Alive = 0 `Dead
+         If Sprite Exist(1) Then Delete Sprite 1
+         Lives = Lives - 1
+         If Lives => 0 Then Alive = -1
+         If Lives < 0
+            Lives = MaxLives
+            Sync
+            Goto Play
+            Alive = -2
+         EndIf
+         DeathAnimation = 1
+         DeathLocationX = CharacterX#
+         DeathLocationY = CharacterY#
+      EndIf
+      If Alive = 1 `Alive
+         If CheckpointInUse = 0
+            CircleX = ChosenX
+            CircleY = ChosenY
+         Else
+            CircleX = (CheckpointX-1)*16
+            CircleY = (CheckpointY-1)*16+20
+         EndIf
+         Ink ColorScheme(5),0
+         Circle CircleX+8,CircleY+8,8
+         Circle CircleX+7,CircleY+8,8
+         Circle CircleX+7,CircleY+7,8
+         Circle CircleX+8,CircleY+7,8
+         If Lives < 10 Then Center Text CircleX+8,CircleY,Str$(Lives)
+         If Lives => 10 Then Center Text CircleX+7,CircleY+3,"*"
+         If Lower$(Inkey$()) = "k" Then Alive = 0
+         If ShiftKey() = 1 And Lower$(Inkey$()) = "k" Then Lives = 0
+         AliveLock = 1
+         Gosub MoveCharacter
+      EndIf
+      If Alive = 2 `Winner
+         Box 139,224,511,326,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+         Box 140,225,510,325,ColorScheme(2),ColorScheme(1),ColorScheme(2),ColorScheme(1)
+         Ink ColorScheme(8),0
+         Set Text To Bold
+         Set Text Size 24
+         If Sprite Exist(1) Then Delete Sprite 1
+         Lifecount$ = Str$(Lives)+" out of "+Str$(MaxLives)+" li"
+         If Lives = 1 Then LifeCount$ = LifeCount$ + "fe left."
+         If Lives <> 1 Then LifeCount$ = LifeCount$ + "ves left."
+         Center Text 320,240,LifeCount$
+         Completion# = Time
+         Completion# = Completion#/30
+         Center Text 320,260,"You took "+Round(Completion#,2)+" seconds."
+         Center Text 320,280,Str$(Coins)+" runner tokens found."
+         Set Text Size 16
+         Set Text To Normal
+         If LoadOnWin = 1 And AliveLock = 0 And Scancode() > 0
+            LoadOnWin = 0
+            If StationaryBlockData$(CharacterTileX,CharacterTileY,1) <> ""
+               If PlayingCampaign = 1
+                  CD SavePath$+"\StoryLevels\"
+               Else
+                  CD SavePath$+"\PlayerLevels\"
+               EndIf
+               If File Exist(StationaryBlockData$(CharacterTileX,CharacterTileY,1))
+                  SaveSpotX# = (StationaryBlockData(CharacterTileX,CharacterTileY,1)-1)*16+XInTile
+                  SaveSpotY# = (StationaryBlockData(CharacterTileX,CharacterTileY,2)-1)*16+20+YInTile
+                  SaveGravityDirection = GravityDirection
+                  Goto LoadForPlay
+               EndIf
+               CD SavePath$
+            Else
+               CharacterX# = (StationaryBlockData(CharacterTileX,CharacterTileY,1)-1)*16+XInTile
+               CharacterY# = (StationaryBlockData(CharacterTileX,CharacterTileY,2)-1)*16+20+YInTile
+            EndIf
+         EndIf
+      EndIf
+      If Scancode() = 0 Then AliveLock = 0
+   EndIf
+Return
+
+MoveCharacter:
+   If Gravity# < 7.9+Jump# Then Gravity# = Gravity# + 0.4
+
+   Fall# = Gravity# - Jump#
+   If Fall# > 7.9 Then Fall# = 7.9
+   Lateral# = Move# + WallMove#
+   If Lateral# > 6 Then Lateral# = 6
+   If Lateral# < -6 Then Lateral# = -6
+
+   CharacterX# = CharacterX# + (Cos(90*(GravityDirection))*(Fall#)) + (Cos(90*(GravityDirection-1))*(Lateral#))
+   CharacterY# = CharacterY# + (Sin(90*(GravityDirection))*(Fall#)) + (Sin(90*(GravityDirection-1))*(Lateral#))
+
+   If GravityDirection <> LastGravityForBoundary
+      UpdatePortalBlocks = 1
+      If BoundaryStatic = 0
+         If GravityDirection = 1
+            For X = 0 To 41
+               StationaryBlock(X,0) = Boundary(TopBoundary)
+               StationaryBlock(X,31) = Boundary(BottomBoundary)
+            Next X
+            For Y = 0 To 31
+               StationaryBlock(0,Y) = Boundary(LeftBoundary)
+               StationaryBlock(41,Y) = Boundary(RightBoundary)
+            Next Y
+         EndIf
+         If GravityDirection = 2
+            For X = 0 To 41
+               StationaryBlock(X,0) = Boundary(LeftBoundary)
+               StationaryBlock(X,31) = Boundary(RightBoundary)
+            Next X
+            For Y = 0 To 31
+               StationaryBlock(0,Y) = Boundary(BottomBoundary)
+               StationaryBlock(41,Y) = Boundary(TopBoundary)
+            Next Y
+         EndIf
+         If GravityDirection = 3
+            For X = 0 To 41
+               StationaryBlock(X,0) = Boundary(BottomBoundary)
+               StationaryBlock(X,31) = Boundary(TopBoundary)
+            Next X
+            For Y = 0 To 31
+               StationaryBlock(0,Y) = Boundary(RightBoundary)
+               StationaryBlock(41,Y) = Boundary(LeftBoundary)
+            Next Y
+         EndIf
+         If GravityDirection = 4
+            For X = 0 To 41
+               StationaryBlock(X,0) = Boundary(RightBoundary)
+               StationaryBlock(X,31) = Boundary(LeftBoundary)
+            Next X
+            For Y = 0 To 31
+               StationaryBlock(0,Y) = Boundary(TopBoundary)
+               StationaryBlock(41,Y) = Boundary(BottomBoundary)
+            Next Y
+         EndIf
+      Else
+         For X = 0 To 41
+            StationaryBlock(X,0) = Boundary(TopBoundary)
+            StationaryBlock(X,31) = Boundary(BottomBoundary)
+         Next X
+         For Y = 0 To 31
+            StationaryBlock(0,Y) = Boundary(LeftBoundary)
+            StationaryBlock(41,Y) = Boundary(RightBoundary)
+         Next Y
+      EndIf
+   EndIf
+   LastGravityForBoundary = GravityDirection
+
+   `Replace Portals with their targeted block for collision
+   If UpdatePortalBlocks = 1
+      For X = 0 to 41
+         For Y = 0 To 31
+            If (Portal(X,Y) = 1 Or StationaryBlock(X,Y) = 12) And StationaryBlockData$(X,Y,1) = ""
+               StationaryBlock(X,Y) = StationaryBlock(StationaryBlockData(X,Y,1),StationaryBlockData(X,Y,2))
+               Portal(X,Y) = 1
+            EndIf
+         Next Y
+      Next X
+   EndIf
+
+   CharacterTileX = (CharacterX#/16)+1
+   CharacterTileY = ((CharacterY#-20)/16)+1
+   XInTile = CharacterX# - (CharacterTileX-1)*16
+   YInTile = CharacterY# - ((CharacterTileY-1)*16+20)
+
+   ActualCharacterTileX = CharacterTileX
+   ActualCharacterTileY = CharacterTileY
+
+   If CharacterTileX > 40 Then CharacterTileX = 40
+   If CharacterTileX < 1 Then CharacterTileX = 1
+   If CharacterTileY > 30 Then CharacterTileY = 30
+   If CharacterTileY < 1 Then CharacterTileY = 1
+
+   JumpLock = 0
+   JumpActive = 0
+   FloorTile = 0
+   CeilingTile = 0
+   WallTileLeft = 0
+   WallTileRight = 0
+   TileOn = 0
+   If Abs(Move#) < 0.1 Then Move# = 0
+   If WallKickMoveLock > 0 Then WallKickMoveLock = WallKickMoveLock - 1
+   WallMove# = WallMove# * 0.8
+   MoveLeft = 0
+   MoveRight = 0
+   If LedgeStand > 0 Then LedgeStand = LedgeStand - 1
+
+   Select GravityDirection
+      Case 1
+         If YInTile => 8 Then FloorTile = StationaryBlock(CharacterTileX,CharacterTileY+1)
+         If YInTile <= 7 Then CeilingTile = StationaryBlock(CharacterTileX,CharacterTileY-1)
+         If XInTile => 11 Then WallTileRight = StationaryBlock(CharacterTileX+1,CharacterTileY)
+         If XInTile <= 6 Then WallTileLeft = StationaryBlock(CharacterTileX-1,CharacterTileY)
+         TileOn = StationaryBlock(CharacterTileX,CharacterTileY)
+         If LeftKey() = 1 Or KeyState(30) = 1 Then MoveLeft = 1
+         If RightKey() = 1 Or KeyState(32) = 1 Then MoveRight = 1
+         If (UpKey() = 1 Or KeyState(17) = 1) And Jump# = 0 Then JumpActive = 1
+         If BlockTypeSolid(TileOn).Left And BlockTypeSolid(TileOn).Top And BlockTypeSolid(TileOn).Right And BlockTypeSolid(TileOn).Bottom
+            If BlockTypeSolid(WallTileLeft).Right = 0 And XInTile < 8
+               Move# = 0
+               CharacterX# = ((CharacterTileX-2)*16)+11
+            Else
+               If BlockTypeSolid(WallTileRight).Left = 0 And XInTile => 8
+                  Move# = 0
+                  CharacterX# = ((CharacterTileX)*16)+6
+               Else
+                  If BlockTypeSolid(CeilingTile).Bottom = 0
+                     If Gravity# < Jump# Then Gravity# = Jump#
+                     CharacterY# = ((CharacterTileY-2)*16+20)+7
+                  Else
+                     If BlockTypeSolid(FloorTile).Top = 0
+                        If Gravity# > Jump#
+                           Gravity# = 0
+                           Jump# = 0
+                        EndIf
+                        CharacterY# = ((CharacterTileY)*16+20)+8
+                     EndIf
+                  EndIf
+               EndIf
+            EndIf
+         EndIf
+         If BlockTypeSolid(FloorTile).Top And ActualCharacterTileY > 0
+            If Gravity# > Jump#
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+            CharacterY# = ((CharacterTileY-1)*16+20)+8
+         EndIf
+         If BlockTypeSolid(CeilingTile).Bottom And ActualCharacterTileY < 31
+            If Gravity# < Jump# Then Gravity# = Jump#
+            CharacterY# = ((CharacterTileY-1)*16+20)+7
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(WallTileLeft).Right And ActualCharacterTileX < 41
+            If LeftKey() = 1 Or KeyState(30) = 1 Then LeftWallHold = (2*100)/BestFPS
+            If Move# < 0 Then Move# = 0
+            CharacterX# = ((CharacterTileX-1)*16)+6
+         Else
+            LeftWallHold = 0
+         EndIf
+         If BlockTypeSolid(WallTileRight).Left And ActualCharacterTileX > 0
+            If RightKey() = 1 Or KeyState(32) = 1 Then RightWallHold = (2*100)/BestFPS
+            If Move# > 0 Then Move# = 0
+            CharacterX# = ((CharacterTileX-1)*16)+11
+         Else
+            RightWallHold = 0
+         EndIf
+         CharacterTileX = (CharacterX#/16)+1
+         CharacterTileY = ((CharacterY#-20)/16)+1
+         XInTile = CharacterX# - (CharacterTileX-1)*16
+         YInTile = CharacterY# - ((CharacterTileY-1)*16+20)
+         ActualCharacterTileX = CharacterTileX
+         ActualCharacterTileY = CharacterTileY
+         If CharacterTileX > 40 Then CharacterTileX = 40
+         If CharacterTileX < 1 Then CharacterTileX = 1
+         If CharacterTileY > 30 Then CharacterTileY = 30
+         If CharacterTileY < 1 Then CharacterTileY = 1
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY-1)).Bottom And XInTile <= 3 And ActualCharacterTileY < 31
+            If YInTile < 7
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterY# = ((CharacterTileY-1)*16+20)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY-1)).Bottom And XInTile => 13 And ActualCharacterTileY < 31
+            If YInTile < 7
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterY# = ((CharacterTileY-1)*16+20)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY+1)).Top And XInTile <= 3 And YInTile > 8 And ActualCharacterTileY > 0
+            CharacterY# = ((CharacterTileY-1)*16+20)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY+1)).Top And XInTile => 13 And YInTile > 8 And ActualCharacterTileY > 0
+            CharacterY# = ((CharacterTileY-1)*16+20)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX,CharacterTileY-1)).Bottom And YInTile => 8 And ActualCharacterTileY < 31 Then JumpLock = 1
+         If StationaryBlock(CharacterTileX-1,CharacterTileY) = 4 And XInTile <= 3 And ActualCharacterTileX > 0 Then Alive = 0
+         If StationaryBlock(CharacterTileX+1,CharacterTileY) = 4 And XInTile => 13 And ActualCharacterTileX < 41 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY+1) = 4 And YInTile => 9 And ActualCharacterTileY < 31 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY-1) = 4 And YInTile <= 7 And ActualCharacterTileY > 0 Then Alive = 0
+      EndCase
+
+      Case 2
+         If XInTile <= 8 Then FloorTile = StationaryBlock(CharacterTileX-1,CharacterTileY)
+         If XInTile => 9 Then CeilingTile = StationaryBlock(CharacterTileX+1,CharacterTileY)
+         If YInTile => 11 Then WallTileRight = StationaryBlock(CharacterTileX,CharacterTileY+1)
+         If YInTile <= 6 Then WallTileLeft = StationaryBlock(CharacterTileX,CharacterTileY-1)
+         TileOn = StationaryBlock(CharacterTileX,CharacterTileY)
+         If UpKey() = 1 Or KeyState(17) = 1 Then MoveLeft = 1
+         If DownKey() = 1 Or KeyState(31) = 1 Then MoveRight = 1
+         If (RightKey() = 1 Or KeyState(32) = 1) And Jump# = 0 Then JumpActive = 1
+         If BlockTypeSolid(TileOn).Left And BlockTypeSolid(TileOn).Top And BlockTypeSolid(TileOn).Right And BlockTypeSolid(TileOn).Bottom
+            If BlockTypeSolid(WallTileLeft).Bottom = 0 And YInTile < 8
+               Move# = 0
+               CharacterY# = ((CharacterTileY-2)*16)+20+11
+            Else
+               If BlockTypeSolid(WallTileRight).Top = 0 And YInTile => 8
+                  Move# = 0
+                  CharacterY# = ((CharacterTileY)*16)+20+6
+               Else
+                  If BlockTypeSolid(CeilingTile).Left = 0
+                     If Gravity# < Jump# Then Gravity# = Jump#
+                     CharacterX# = ((CharacterTileX)*16)+7
+                  Else
+                     If BlockTypeSolid(FloorTile).Right = 0
+                        If Gravity# > Jump#
+                           Gravity# = 0
+                           Jump# = 0
+                        EndIf
+                        CharacterX# = ((CharacterTileY-2)*16)+8
+                     EndIf
+                  EndIf
+               EndIf
+            EndIf
+         EndIf
+         If BlockTypeSolid(FloorTile).Right And ActualCharacterTileX < 41
+            If Gravity# > Jump#
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+            CharacterX# = ((CharacterTileX-1)*16)+8
+         EndIf
+         If BlockTypeSolid(CeilingTile).Left And ActualCharacterTileX > 0
+            If Gravity# < Jump# Then Gravity# = Jump#
+            CharacterX# = ((CharacterTileX-1)*16)+9
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(WallTileLeft).Bottom And ActualCharacterTileY < 31
+            If UpKey() = 1 Or KeyState(17) = 1 Then LeftWallHold = (2*100)/BestFPS
+            If Move# < 0 Then Move# = 0
+            CharacterY# = ((CharacterTileY-1)*16)+20+6
+         Else
+            LeftWallHold = 0
+         EndIf
+         If BlockTypeSolid(WallTileRight).Top And ActualCharacterTileY > 0
+            If DownKey() = 1 Or KeyState(31) = 1 Then RightWallHold = (2*100)/BestFPS
+            If Move# > 0 Then Move# = 0
+            CharacterY# = ((CharacterTileY-1)*16)+20+11
+         Else
+            RightWallHold = 0
+         EndIf
+         CharacterTileX = (CharacterX#/16)+1
+         CharacterTileY = ((CharacterY#-20)/16)+1
+         XInTile = CharacterX# - (CharacterTileX-1)*16
+         YInTile = CharacterY# - ((CharacterTileY-1)*16+20)
+         ActualCharacterTileX = CharacterTileX
+         ActualCharacterTileY = CharacterTileY
+         If CharacterTileX > 40 Then CharacterTileX = 40
+         If CharacterTileX < 1 Then CharacterTileX = 1
+         If CharacterTileY > 30 Then CharacterTileY = 30
+         If CharacterTileY < 1 Then CharacterTileY = 1
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY-1)).Left And YInTile <= 3 And ActualCharacterTileX > 0
+            If XInTile > 9
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterX# = ((CharacterTileX-1)*16)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY+1)).Left And YInTile => 13 And ActualCharacterTileX > 0
+            If XInTile > 9
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterX# = ((CharacterTileX-1)*16)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY-1)).Right And YInTile <= 3 And XInTile < 8 And ActualCharacterTileX < 41
+            CharacterX# = ((CharacterTileX-1)*16)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY+1)).Right And YInTile => 13 And XInTile < 8 And ActualCharacterTileX < 41
+            CharacterX# = ((CharacterTileX-1)*16)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY)).Left And XInTile => 8 And ActualCharacterTileX > 0 Then JumpLock = 1
+         If StationaryBlock(CharacterTileX-1,CharacterTileY) = 4 And XInTile <= 7 And ActualCharacterTileX > 0 Then Alive = 0
+         If StationaryBlock(CharacterTileX+1,CharacterTileY) = 4 And XInTile => 9 And ActualCharacterTileX < 41 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY+1) = 4 And YInTile => 13 And ActualCharacterTileY < 31 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY-1) = 4 And YInTile <= 3 And ActualCharacterTileY > 0 Then Alive = 0
+      EndCase
+
+      Case 3
+         If YInTile <= 8 Then FloorTile = StationaryBlock(CharacterTileX,CharacterTileY-1)
+         If YInTile => 9 Then CeilingTile = StationaryBlock(CharacterTileX,CharacterTileY+1)
+         If XInTile => 11 Then WallTileLeft = StationaryBlock(CharacterTileX+1,CharacterTileY)
+         If XInTile <= 6 Then WallTileRight = StationaryBlock(CharacterTileX-1,CharacterTileY)
+         TileOn = StationaryBlock(CharacterTileX,CharacterTileY)
+         If RightKey() = 1 Or KeyState(32) = 1 Then MoveLeft = 1
+         If LeftKey() = 1 Or KeyState(30) = 1 Then MoveRight = 1
+         If (DownKey() = 1 Or KeyState(31) = 1) And Jump# = 0 Then JumpActive = 1
+         If BlockTypeSolid(TileOn).Left And BlockTypeSolid(TileOn).Top And BlockTypeSolid(TileOn).Right And BlockTypeSolid(TileOn).Bottom
+            If BlockTypeSolid(WallTileLeft).Right = 0 And XInTile < 8
+               Move# = 0
+               CharacterX# = ((CharacterTileX-2)*16)+9
+            Else
+               If BlockTypeSolid(WallTileRight).Left = 0 And XInTile => 8
+                  Move# = 0
+                  CharacterX# = ((CharacterTileX)*16)+4
+               Else
+                  If BlockTypeSolid(CeilingTile).Top = 0
+                     If Gravity# < Jump# Then Gravity# = Jump#
+                     CharacterY# = ((CharacterTileY)*16+20)+9
+                  Else
+                     If BlockTypeSolid(FloorTile).Bottom = 0
+                        If Gravity# > Jump#
+                           Gravity# = 0
+                           Jump# = 0
+                        EndIf
+                        CharacterY# = ((CharacterTileY-2)*16+20)+8
+                     EndIf
+                  EndIf
+               EndIf
+            EndIf
+         EndIf
+         If BlockTypeSolid(FloorTile).Bottom And ActualCharacterTileY < 31
+            If Gravity# > Jump#
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+            CharacterY# = ((CharacterTileY-1)*16+20)+8
+         EndIf
+         If BlockTypeSolid(CeilingTile).Top And ActualCharacterTileY > 0
+            If Gravity# < Jump# Then Gravity# = Jump#
+            CharacterY# = ((CharacterTileY-1)*16+20)+9
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(WallTileLeft).Left And ActualCharacterTileX > 0
+            If RightKey() = 1 Or KeyState(32) = 1 Then LeftWallHold = (2*100)/BestFPS
+            If Move# < 0 Then Move# = 0
+            CharacterX# = ((CharacterTileX-1)*16)+11
+         Else
+            LeftWallHold = 0
+         EndIf
+         If BlockTypeSolid(WallTileRight).Right And ActualCharacterTileX < 41
+            If LeftKey() = 1 Or KeyState(30) = 1 Then RightWallHold = (2*100)/BestFPS
+            If Move# > 0 Then Move# = 0
+            CharacterX# = ((CharacterTileX-1)*16)+6
+         Else
+            RightWallHold = 0
+         EndIf
+         CharacterTileX = (CharacterX#/16)+1
+         CharacterTileY = ((CharacterY#-20)/16)+1
+         XInTile = CharacterX# - (CharacterTileX-1)*16
+         YInTile = CharacterY# - ((CharacterTileY-1)*16+20)
+         ActualCharacterTileX = CharacterTileX
+         ActualCharacterTileY = CharacterTileY
+         If CharacterTileX > 40 Then CharacterTileX = 40
+         If CharacterTileX < 1 Then CharacterTileX = 1
+         If CharacterTileY > 30 Then CharacterTileY = 30
+         If CharacterTileY < 1 Then CharacterTileY = 1
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY+1)).Top And XInTile <= 3 And ActualCharacterTileY > 0
+            If YInTile > 9
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterY# = ((CharacterTileY-1)*16+20)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY+1)).Top And XInTile => 13 And ActualCharacterTileY > 0
+            If YInTile > 9
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterY# = ((CharacterTileY-1)*16+20)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY-1)).Bottom And XInTile <= 3 And YInTile < 8 And ActualCharacterTileY < 31
+            CharacterY# = ((CharacterTileY-1)*16+20)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY-1)).Bottom And XInTile => 13 And YInTile < 8 And ActualCharacterTileY < 31
+            CharacterY# = ((CharacterTileY-1)*16+20)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX,CharacterTileY+1)).Top And YInTile <= 8 And ActualCharacterTileY > 0 Then JumpLock = 1
+         If StationaryBlock(CharacterTileX-1,CharacterTileY) = 4 And XInTile <= 3 And ActualCharacterTileX > 0 Then Alive = 0
+         If StationaryBlock(CharacterTileX+1,CharacterTileY) = 4 And XInTile => 13 And ActualCharacterTileX < 41 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY+1) = 4 And YInTile => 9 And ActualCharacterTileY < 31 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY-1) = 4 And YInTile <= 7 And ActualCharacterTileY > 0 Then Alive = 0
+      EndCase
+
+      Case 4
+         If XInTile => 8 Then FloorTile = StationaryBlock(CharacterTileX+1,CharacterTileY)
+         If XInTile <= 7 Then CeilingTile = StationaryBlock(CharacterTileX-1,CharacterTileY)
+         If YInTile => 11 Then WallTileLeft = StationaryBlock(CharacterTileX,CharacterTileY+1)
+         If YInTile <= 6 Then WallTileRight = StationaryBlock(CharacterTileX,CharacterTileY-1)
+         TileOn = StationaryBlock(CharacterTileX,CharacterTileY)
+         If DownKey() = 1 Or KeyState(31) = 1 Then MoveLeft = 1
+         If UpKey() = 1 Or KeyState(17) = 1 Then MoveRight = 1
+         If (LeftKey() = 1 Or KeyState(30) = 1) And Jump# = 0 Then JumpActive = 1
+         If BlockTypeSolid(TileOn).Left And BlockTypeSolid(TileOn).Top And BlockTypeSolid(TileOn).Right And BlockTypeSolid(TileOn).Bottom
+            If BlockTypeSolid(WallTileLeft).Top = 0 And YInTile => 8
+               Move# = 0
+               CharacterY# = ((CharacterTileY)*16)+20+6
+            Else
+               If BlockTypeSolid(WallTileRight).Bottom = 0 And YInTile < 8
+                  Move# = 0
+                  CharacterY# = ((CharacterTileY)*16)+20+11
+               Else
+                  If BlockTypeSolid(CeilingTile).Right = 0
+                     If Gravity# < Jump# Then Gravity# = Jump#
+                     CharacterX# = ((CharacterTileY-2)*16)+8
+                  Else
+                     If BlockTypeSolid(FloorTile).Left = 0
+                        If Gravity# > Jump#
+                           Gravity# = 0
+                           Jump# = 0
+                        EndIf
+                        CharacterX# = ((CharacterTileX)*16)+7
+                     EndIf
+                  EndIf
+               EndIf
+            EndIf
+         EndIf
+         If BlockTypeSolid(FloorTile).Left And ActualCharacterTileX > 0
+            If Gravity# > Jump#
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+            CharacterX# = ((CharacterTileX-1)*16)+8
+         EndIf
+         If BlockTypeSolid(CeilingTile).Right And ActualCharacterTileX < 31
+            If Gravity# < Jump# Then Gravity# = Jump#
+            CharacterX# = ((CharacterTileX-1)*16)+7
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(WallTileLeft).Top And ActualCharacterTileY > 0
+            If DownKey() = 1 Or KeyState(31) = 1 Then LeftWallHold = (2*100)/BestFPS
+            If Move# < 0 Then Move# = 0
+            CharacterY# = ((CharacterTileY-1)*16)+20+11
+         Else
+            LeftWallHold = 0
+         EndIf
+         If BlockTypeSolid(WallTileRight).Bottom And ActualCharacterTileY < 31
+            If UpKey() = 1 Or KeyState(17) = 1 Then RightWallHold = (2*100)/BestFPS
+            If Move# > 0 Then Move# = 0
+            CharacterY# = ((CharacterTileY-1)*16)+20+6
+         Else
+            RightWallHold = 0
+         EndIf
+         CharacterTileX = (CharacterX#/16)+1
+         CharacterTileY = ((CharacterY#-20)/16)+1
+         XInTile = CharacterX# - (CharacterTileX-1)*16
+         YInTile = CharacterY# - ((CharacterTileY-1)*16+20)
+         ActualCharacterTileX = CharacterTileX
+         ActualCharacterTileY = CharacterTileY
+         If CharacterTileX > 40 Then CharacterTileX = 40
+         If CharacterTileX < 1 Then CharacterTileX = 1
+         If CharacterTileY > 30 Then CharacterTileY = 30
+         If CharacterTileY < 1 Then CharacterTileY = 1
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY-1)).Right And YInTile <= 3 And ActualCharacterTileX < 41
+            If XInTile < 7
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterX# = ((CharacterTileX-1)*16)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY+1)).Right And YInTile => 13 And ActualCharacterTileX < 41
+            If XInTile < 7
+               If Gravity# < Jump# Then Gravity# = Jump#
+               CharacterX# = ((CharacterTileX-1)*16)+8
+            EndIf
+            JumpLock = 1
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY-1)).Left And YInTile <= 3 And XInTile > 8 And ActualCharacterTileX > 0
+            CharacterX# = ((CharacterTileX-1)*16)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX+1,CharacterTileY+1)).Left And YInTile => 13 And XInTile > 8 And ActualCharacterTileX > 0
+            CharacterX# = ((CharacterTileX-1)*16)+8
+            If Gravity# > Jump#
+               LedgeStand = 2
+               Gravity# = 0
+               Jump# = 0
+            EndIf
+         EndIf
+         If BlockTypeSolid(StationaryBlock(CharacterTileX-1,CharacterTileY)).Right And XInTile <= 8 And ActualCharacterTileX < 41 Then JumpLock = 1
+         If StationaryBlock(CharacterTileX-1,CharacterTileY) = 4 And XInTile <= 3 And ActualCharacterTileX > 0 Then Alive = 0
+         If StationaryBlock(CharacterTileX+1,CharacterTileY) = 4 And XInTile => 13 And ActualCharacterTileX < 41 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY+1) = 4 And YInTile => 12 And ActualCharacterTileY < 31 Then Alive = 0
+         If StationaryBlock(CharacterTileX,CharacterTileY-1) = 4 And YInTile <= 5 And ActualCharacterTileY > 0 Then Alive = 0
+      EndCase
+
+   EndSelect
+
+   `Correct character position for block code
+   CharacterTileX = (CharacterX#/16)+1
+   CharacterTileY = ((CharacterY#-20)/16)+1
+   If CharacterTileX > 41 Then CharacterTileX = 41
+   If CharacterTileX < 0 Then CharacterTileX = 0
+   If CharacterTileY > 31 Then CharacterTileY = 31
+   If CharacterTileY < 0 Then CharacterTileY = 0
+   XInTileForBoundary = CharacterX# - (CharacterTileX-1)*16
+   YInTileForBoundary = CharacterY# - ((CharacterTileY-1)*16+20)
+
+   `Block Code
+   If TileOn = 6
+      AliveLock = 1
+      Alive = 2
+      LoadOnWin = 1
+   EndIf
+   If FloorTile = 14 Then GravityDirection = 1
+   If FloorTile = 15 Then GravityDirection = 2
+   If FloorTile = 16 Then GravityDirection = 3
+   If FloorTile = 17 Then GravityDirection = 4
+   If GravityDirection = 1 And FloorTile = 10 Then Move# = Move# + 1
+   If GravityDirection = 1 And FloorTile = 11 Then Move# = Move# - 1
+   If GravityDirection = 3 And FloorTile = 10 Then Move# = Move# - 1
+   If GravityDirection = 3 And FloorTile = 11 Then Move# = Move# + 1
+   If GravityDirection = 2 And FloorTile = 8 Then Move# = Move# + 1
+   If GravityDirection = 2 And FloorTile = 9 Then Move# = Move# - 1
+   If GravityDirection = 4 And FloorTile = 8 Then Move# = Move# - 1
+   If GravityDirection = 4 And FloorTile = 9 Then Move# = Move# + 1
+   If WallTileLeft = 23
+      Select GravityDirection
+         Case 1
+            If TileSpaceOpen(CharacterTileX-2,CharacterTileY)
+               StationaryBlock(CharacterTileX-2,CharacterTileY) = 23
+               StationaryBlock(CharacterTileX-1,CharacterTileY) = 0
+            EndIf
+         EndCase
+         Case 2
+            If TileSpaceOpen(CharacterTileX,CharacterTileY-2)
+               StationaryBlock(CharacterTileX,CharacterTileY-2) = 23
+               StationaryBlock(CharacterTileX,CharacterTileY-1) = 0
+            EndIf
+         EndCase
+         Case 3
+            If TileSpaceOpen(CharacterTileX+2,CharacterTileY)
+               StationaryBlock(CharacterTileX+2,CharacterTileY) = 23
+               StationaryBlock(CharacterTileX+1,CharacterTileY) = 0
+            EndIf
+         EndCase
+         Case 4
+            If TileSpaceOpen(CharacterTileX,CharacterTileY+2)
+               StationaryBlock(CharacterTileX,CharacterTileY+2) = 23
+               StationaryBlock(CharacterTileX,CharacterTileY+1) = 0
+            EndIf
+         EndCase
+      EndSelect
+   EndIf
+   If WallTileRight = 23
+      Select GravityDirection
+         Case 1
+            If TileSpaceOpen(CharacterTileX+2,CharacterTileY)
+               StationaryBlock(CharacterTileX+2,CharacterTileY) = 23
+               StationaryBlock(CharacterTileX+1,CharacterTileY) = 0
+            EndIf
+         EndCase
+         Case 2
+            If TileSpaceOpen(CharacterTileX,CharacterTileY+2)
+               StationaryBlock(CharacterTileX,CharacterTileY+2) = 23
+               StationaryBlock(CharacterTileX,CharacterTileY+1) = 0
+            EndIf
+         EndCase
+         Case 3
+            If TileSpaceOpen(CharacterTileX-2,CharacterTileY)
+               StationaryBlock(CharacterTileX-2,CharacterTileY) = 23
+               StationaryBlock(CharacterTileX-1,CharacterTileY) = 0
+            EndIf
+         EndCase
+         Case 4
+            If TileSpaceOpen(CharacterTileX,CharacterTileY-2)
+               StationaryBlock(CharacterTileX,CharacterTileY-2) = 23
+               StationaryBlock(CharacterTileX,CharacterTileY-1) = 0
+            EndIf
+         EndCase
+      EndSelect
+   EndIf
+   If StationaryBlock(CharacterTileX,CharacterTileY) = 4 Then Alive = 0
+   If Portal(CharacterTileX,CharacterTileY) = 1
+      If StationaryBlockData$(CharacterTileX,CharacterTileY,1) <> ""
+         If PlayingCampaign = 1
+            CD SavePath$+"\StoryLevels\"
+         Else
+            CD SavePath$+"\PlayerLevels\"
+         EndIf
+         If File Exist(StationaryBlockData$(CharacterTileX,CharacterTileY,1))
+            SaveSpotX# = (StationaryBlockData(CharacterTileX,CharacterTileY,1)-1)*16+XInTile
+            SaveSpotY# = (StationaryBlockData(CharacterTileX,CharacterTileY,2)-1)*16+20+YInTile
+            SaveGravityDirection = GravityDirection
+            Goto LoadForPlay
+         EndIf
+         CD SavePath$
+      Else
+         CharacterX# = (StationaryBlockData(CharacterTileX,CharacterTileY,1)-1)*16+XInTile
+         CharacterY# = (StationaryBlockData(CharacterTileX,CharacterTileY,2)-1)*16+20+YInTile
+      EndIf
+   EndIf
+   If TileOn = 7
+      CheckpointInUse = 1
+      CheckpointX = CharacterTileX
+      CheckpointY = CharacterTileY
+      CheckpointGravity = GravityDirection
+   EndIf
+   If FloorTile = 13 Then JumpLock = 1
+   If TileOn = 25
+      StationaryBlock(CharacterTileX,CharacterTileY) = 0
+      Inc Coins
+   EndIf
+
+   `Boarder Portals
+   If Portal(CharacterTileX,CharacterTileY) = 1
+      CharacterX# = (StationaryBlockData(CharacterTileX,CharacterTileY,1)-1)*16+XInTileForBoundary
+      CharacterY# = (StationaryBlockData(CharacterTileX,CharacterTileY,2)-1)*16+20+YInTileForBoundary
+   EndIf
+
+   `Change Of Gravity
+   If GravityDirection <> LastGravityDirection
+      Gravity# = 0.1
+      Jump# = 0
+      WallMove# = 0
+      Move# = 0
+      JumpActive = 0
+      JumpLock = 0
+   EndIf
+   LastGravityDirection = GravityDirection
+
+   `Movement Left and Right
+   If MoveLeft
+      If RightWallHold > 0 And Gravity# <> 0 And MoveRight = 0 And WallTileRight <> 2
+         RightWallHold = 0
+         Gravity# = 0
+         Jump# = 4
+         WallMove# = -6
+         WallKickMoveLock = (20*BestFPS)/100
+      Else
+         If WallKickMoveLock = 0
+            If FloorTile = 3
+               Move# = Move# - 0.35
+            Else
+               Move# = Move# - 2
+            EndIf
+         EndIf
+      EndIf
+   Else
+      LeftWallHold = LeftWallHold - 1
+   EndIf
+   If MoveRight
+      If LeftWallHold > 0 And Gravity# <> 0 And MoveLeft = 0 And WallTileLeft <> 2
+         LeftWallHold = 0
+         Gravity# = 0
+         Jump# = 4
+         WallMove# = 6
+         WallKickMoveLock = (20*BestFPS)/100
+      Else
+         If WallKickMoveLock = 0
+            If FloorTile = 3
+               Move# = Move# + 0.35
+            Else
+               Move# = Move# + 2
+            EndIf
+         EndIf
+      EndIf
+   Else
+      RightWallHold = RightWallHold - 1
+   EndIf
+
+   `Movement Dampening
+   If GravityDirection = 1 And BlockTypeSolid(FloorTile).Top And FloorTile <> 3 Then Move# = Move# * 0.7 `On Normal Floor
+   If GravityDirection = 2 And BlockTypeSolid(FloorTile).Right And FloorTile <> 3 Then Move# = Move# * 0.7 `On Normal Floor
+   If GravityDirection = 3 And BlockTypeSolid(FloorTile).Bottom And FloorTile <> 3 Then Move# = Move# * 0.7 `On Normal Floor
+   If GravityDirection = 4 And BlockTypeSolid(FloorTile).Left And FloorTile <> 3 Then Move# = Move# * 0.7 `On Normal Floor
+   If FloorTile = 3 Then Move# = Move# * 0.97 `On Ice
+   If Gravity# <> 0 Then Move# = Move# * 0.5 `In Air
+
+   `Jumping Active
+   If SpaceKey() = 1 And Jump# = 0 And Gravity# = 0 Then JumpActive = 1
+   If JumpActive = 1 And JumpLock = 0 And Gravity# = 0 Then Jump# = 6
+   If JumpActive = 1 And JumpLock = 1 Then JumpActive = 0
+   If JumpActive = 1 And Gravity# <> 0 Then JumpActive = 0
+
+   `Hit Head On Ceiling
+   If GravityDirection = 1 And YInTile <= 8 And Gravity# < Jump# And BlockTypeSolid(CeilingTile).Bottom Then Gravity# = Jump#
+   If GravityDirection = 2 And XInTile => 8 And Gravity# < Jump# And BlockTypeSolid(CeilingTile).Left Then Gravity# = Jump#
+   If GravityDirection = 3 And YInTile => 8 And Gravity# < Jump# And BlockTypeSolid(CeilingTile).Top Then Gravity# = Jump#
+   If GravityDirection = 4 And XInTile <= 8 And Gravity# < Jump# And BlockTypeSolid(CeilingTile).Right Then Gravity# = Jump#
+
+   `Animate/Draw Character
+   If Sprite Exist(1) Then Delete Sprite 1
+   If Jump# - Gravity# > 0.1
+      CharacterAnimation = 1 `Jump
+      If WallKickMoveLock > 0 Then CharacterAnimation = 2 `Wall Kick
+   Else
+      If LedgeStand = 0 Then CharacterAnimation = 6 `Fall(Reach)
+   EndIf
+   If Gravity# = 0
+      CharacterAnimation = 5 `Stand (Part of the walking animation)
+      If FloorTile = 3 And Move# <> 0 Then CharacterAnimation = 3 `Slide on Ice
+      If MoveLeft Or MoveRight
+         Multiplier# = BestFPS
+         Multiplier# = Multiplier#/100.0
+         If (Loops MOD (30.0*Multiplier#)) > (15.0*Multiplier#) Then CharacterAnimation = 7 `Walk
+      EndIf
+   EndIf
+   If Move#+WallMove# < 0
+      FlipSprite = 1
+   Else
+      FlipSprite = 0
+   EndIf
+   Sprite 1,-10,-10,CharacterAnimation
+   If Sprite Exist(1)
+      If FlipSprite = 1 Then Mirror Sprite 1
+      Offset Sprite 1,5.5,8.5
+      Rotate Sprite 1,90*(GravityDirection-1)
+   EndIf
+   `If GravityDirection = 1 Then Sprite 1,CharacterX#,CharacterY#,CharacterAnimation
+   `If GravityDirection = 2 Then Sprite 1,CharacterX#-1,CharacterY#,CharacterAnimation
+   `If GravityDirection = 3 Then Sprite 1,CharacterX#-2,CharacterY#-1,CharacterAnimation
+   `If GravityDirection = 4 Then Sprite 1,CharacterX#,CharacterY#-2,CharacterAnimation
+   `If GravityDirection = 1 Then Paste Sprite 1,CharacterX#,CharacterY#
+   `If GravityDirection = 2 Then Paste Sprite 1,CharacterX#-1,CharacterY#
+   `If GravityDirection = 3 Then Paste Sprite 1,CharacterX#-2,CharacterY#-1
+   `If GravityDirection = 4 Then Paste Sprite 1,CharacterX#,CharacterY#-2
+Return
+
+Menu:
+  `Windows
+   If MouseClick() = 0 Then DragWindow = 0
+   `-------------------------------  Window 1 : Save Changes and Quit --------------------------
+   If Window(1) = 1
+      DrawWindow(1)
+      Center Text WindowX(1)+100,WindowY(1)+30,"Save changes?"
+      X = WindowX(1)+100
+      Y = WindowY(1)+50
+      B1 = Button(X-30,Y,X+30,Y+20,"No")
+      B2 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      If B1 = 2 Then End
+      If B2 = 2
+         Window(1) = 2
+         Window(2) = 1
+         WindowX(2) = 200
+         WindowY(2) = 100
+      EndIf
+      If B3 = 2 Then Window(1) = 0
+   EndIf
+   `---------------------------------  Window 2/7 : Save/Load Window  ---------------------------------
+   If Window(2) > 0 Or Window(7) > 0
+      ` Load the list of Save files
+      If Window(2) = 1 Or Window(7) = 1
+         CD SavePath$+"\PlayerLevels\"
+         Perform Checklist For Files
+         NumberOfSaves = 0
+         For C = 1 To Checklist Quantity()
+            If Right$(Checklist String$(C),4) = ".txt"
+               NumberOfSaves = NumberOfSaves + 1
+            EndIf
+         Next C
+         Dim Saves$(NumberOfSaves)
+         On = 0
+         For C = 1 To Checklist Quantity()
+            If Right$(Checklist String$(C),4) = ".txt"
+               On = On + 1
+               Saves$(On) = Left$(Checklist String$(C),Len(Checklist String$(C))-4)
+            EndIf
+         Next C
+         If Window(2) = 1 Then Window(2) = 2
+         If Window(7) = 1 Then Window(7) = 2
+         ScrollY#(1) = 0
+      EndIf
+      
+      If Window(2) > 0 Then W = 2
+      If Window(7) > 0 Then W = 7
+      JustClosed = 0
+      DrawWindow(W)
+      If Window(W) = 0 Then JustClosed = 1
+      Box WindowX(W)+10,WindowY(W)+25,WindowX(W)+(WindowWidth(W)-10),WindowY(W)+(WindowHeight(W)-60),ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box WindowX(W)+11,WindowY(W)+26,WindowX(W)+(WindowWidth(W)-11),WindowY(W)+(WindowHeight(W)-61),ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      In = 0
+      If NumberOfSaves > 12
+         ScrollLeft(1) = WindowX(W)+(WindowWidth(W)-28)
+         ScrollRight(1) = WindowX(W)+(WindowWidth(W)-12)
+         In = ScrollBar(1,WindowY(W)+27,WindowY(W)+(WindowHeight(W)-63),NumberOfSaves,12)
+      Else
+         In = 0
+      EndIf
+      P = 0
+      Ink ColorScheme(5),0
+      Twelve = NumberOfSaves
+      If Twelve > 12 Then Twelve = 12
+      For I = 1+In To Twelve+In
+         P = P + 1
+         ColorChange = 0
+         If Window(3) = 0 And Window(4) = 0 And Window(5) = 0
+            If MouseY() > (WindowY(W)+7+(P*18)) And MouseY() < (WindowY(W)+7+((P+1)*18)) And MouseX() > WindowX(W)+12 And MouseX() < WindowX(W)+(WindowWidth(W)-28)
+               Ink ColorScheme(6),0
+               ColorChange = 1
+               If MouseClick() = 1 And Window(8) = 0 Then TextBox$(1) = Saves$(I)
+               If MouseClick() = 2 And Window(8) = 0 And SaveTarget = 0
+                  Window(3) = 1
+                  WindowX(3) = MouseX()
+                  WindowY(3) = MouseY()
+                  SaveTarget = I
+               EndIf
+            EndIf
+         Else 
+            If SaveTarget = I
+               Ink ColorScheme(6),0
+               ColorChange = 1
+            EndIf
+         EndIf
+         If TextBox$(1) = Saves$(I)
+            Ink ColorScheme(6),0
+            ColorChange = 1
+         EndIf
+         Text WindowX(W)+24,WindowY(W)+7+(P*18),Saves$(I)
+         If ColorChange = 1 Then Ink ColorScheme(5),0
+      Next I
+      TextBox(1,WindowX(W)+10,WindowY(W)+(WindowHeight(W)-40),WindowX(W)+(WindowWidth(W)-68),WindowY(W)+(WindowHeight(W)-20),20)
+      If Window(2) > 0 Then Button$ = "Save"
+      If Window(7) > 0 Then Button$ = "Load"
+      JustSaved = 0
+      Overwrite = 0
+      If Button(WindowX(W)+(WindowWidth(W)-65),WindowY(W)+(WindowHeight(W)-40),WindowX(W)+(WindowWidth(W)-5),WindowY(W)+(WindowHeight(W)-20),Button$) = 2
+         If Window(2) > 0
+            If File Exist(TextBox$(1)+".txt")
+               Window(8) = 1
+               WindowX(8) = 300
+               WindowY(8) = 200
+               Overwrite = 1
+            Else
+               Set Window Title "Block Runner - " + TextBox$(1)
+               Open To Write 1,TextBox$(1)+".txt"
+                  For Y = 1 To 30
+                     String$ = ""
+                     For X = 1 To 40
+                        If BlockData(X,Y,1) > 0 or BlockData(X,Y,2) > 0 Then String$ = String$ + Str$(Block(X,Y)) + "&" + Str$(BlockData(X,Y,1)) + "&" + Str$(BlockData(X,Y,2)) + ","
+                        If BlockData$(X,Y,1) <> "" Then String$ = String$ + "&File:" + BlockData$(X,Y,1)
+                        If BlockData(X,Y,1) = 0 and BlockData(X,Y,2) = 0 Then String$ = String$ + Str$(Block(X,Y)) + ","
+                     Next X
+                     Write String 1,String$
+                  Next Y
+                  Write String 1,Str$(TopBoundary)+"-"+Str$(RightBoundary)+"-"+Str$(BottomBoundary)+"-"+Str$(LeftBoundary)+"-"+Str$(BoundaryStatic)+"-"+Str$(StartingGravity)+"-"+Str$(ChooseStart)+"-"+Str$(MaxLives)
+                  Write String 1,ImageOverlay$
+               Close File 1
+               Saved = 1
+               Window(2) = 0
+               MenuSelect = 5
+            EndIf
+            JustSaved = 1
+         EndIf
+         If Window(7) > 0
+            If File Exist(TextBox$(1)+".txt")
+               If Saved = 0
+                  ToLoad$ = TextBox$(1)
+                  Window(10) = 1
+                  WindowX(10) = 300
+                  WindowY(10) = 200
+               Else
+                  Open To Read 1,TextBox$(1)+".txt"
+                     CurrentlyLoaded$ = TextBox$(1)+".txt"
+                     For Y = 1 To 30
+                        Read String 1,String$
+                        For X = 1 To 40
+                           Block(X,Y) = Val(SplitString(SplitString(String$,",",X),"&",1))
+                           BlockData(X,Y,1) = Val(SplitString(SplitString(String$,",",X),"&",2))
+                           BlockData(X,Y,2) = Val(SplitString(SplitString(String$,",",X),"&",3))
+                           BlockData$(X,Y,1) = ""
+                           If Len(SplitString(SplitString(String$,",",X),"&",4)) > 5 Then BlockData$(X,Y,1) = Right$(SplitString(SplitString(String$,",",X),"&",4),Len(SplitString(SplitString(String$,",",X),"&",4))-5)
+                        Next X
+                     Next Y
+                     Read String 1,String$
+                     TopBoundary = Val(SplitString(String$,"-",1))
+                     RightBoundary = Val(SplitString(String$,"-",2))
+                     BottomBoundary = Val(SplitString(String$,"-",3))
+                     LeftBoundary = Val(SplitString(String$,"-",4))
+                     BoundaryStatic = Val(SplitString(String$,"-",5))
+                     StartingGravity = Val(SplitString(String$,"-",6))
+                     ChooseStart = Val(SplitString(String$,"-",7))
+                     MaxLives = Val(SplitString(String$,"-",8))
+                     Read String 1,ImageOverlay$
+                     CD FolderPath$
+                     If Image Exist(1001) Then Delete Image 1001
+                     If File Exist("Images\"+ImageOverlay$) Then Load Image "Images\"+ImageOverlay$,1001,1
+                     CD SavePath$
+                  Close File 1
+                  Saved = 1
+                  Set Window Title "Block Runner - " + TextBox$(1)
+                  Window(7) = 0
+               EndIf
+            Else
+               Window(9) = 1
+               WindowX(9) = 300
+               WindowY(9) = 200
+            EndIf
+         EndIf
+      EndIf
+      If (JustSaved = 1 And Overwrite = 0)
+         If Window(1) = 2 Then End
+         If Window(10) = 2 And ToLoad$ <> ""
+            LoadLevel(ToLoad$+".txt")
+         EndIf
+         If Window(11) = 2
+            ClearLevelData()
+         EndIf
+         If Window(12) = 2
+            String$ = Get Clipboard$()
+            For Y = 1 To 30
+               String2$ = SplitString(String$,Chr$(13)+Chr$(10),Y)
+               For X = 1 To 40
+                  Block(X,Y) = Val(SplitString(SplitString(String2$,",",X),"&",1))
+                  BlockData(X,Y,1) = Val(SplitString(SplitString(String2$,",",X),"&",2))
+                  BlockData(X,Y,2) = Val(SplitString(SplitString(String2$,",",X),"&",3))
+                  If Len(SplitString(SplitString(String2$,",",X),"&",4)) > 5 Then BlockData$(X,Y,1) = Right$(SplitString(SplitString(String2$,",",X),"&",4),Len(SplitString(SplitString(String2$,",",X),"&",4))-5)
+               Next X
+            Next Y
+            String2$ = SplitString(String$,Chr$(13)+Chr$(10),31)
+            TopBoundary = Val(SplitString(String2$,"-",1))
+            RightBoundary = Val(SplitString(String2$,"-",2))
+            BottomBoundary = Val(SplitString(String2$,"-",3))
+            LeftBoundary = Val(SplitString(String2$,"-",4))
+            BoundaryStatic = Val(SplitString(String2$,"-",5))
+            StartingGravity = Val(SplitString(String2$,"-",6))
+            ChooseStart = Val(SplitString(String2$,"-",7))
+            MaxLives = Val(SplitString(String2$,"-",8))
+            String2$ = SplitString(String$,Chr$(13)+Chr$(10),32)
+            CD FolderPath$
+            If File Exist("Images\"+ImageOverlay2$) Then Load Image "Images\"+ImageOverlay2$,1001,1
+            CD SavePath$
+         EndIf
+      EndIf
+      If JustClosed = 1
+         For N = 1 To 14
+            Window(N) = 0
+         Next N
+         MenuSelect = 5
+      EndIf
+   EndIf
+   If Window(2) = 0 And Window(7) = 0
+      Window(3) = 0
+      Window(4) = 0
+      Window(5) = 0
+   EndIf
+   `------------------------------- Window 3 : Delete/Rename Window ----------------------------
+   If Window(3) > 0
+      If Button(WindowX(3),WindowY(3),WindowX(3)+75,WindowY(3)+25,"Delete") = 2
+         Window(3) = 0
+         Window(4) = 1
+         WindowX(4) = 300
+         WindowY(4) = 200
+      EndIf
+      If Button(WindowX(3),WindowY(3)+25,WindowX(3)+75,WindowY(3)+50,"Rename") = 2
+         Window(3) = 0
+         Window(5) = 1
+         WindowX(5) = 200
+         WindowY(5) = 200
+      EndIf
+      If MouseClick() = 1 And (MouseX() < WindowX(3) Or MouseY() < WindowY(3) Or MouseX() > WindowX(3)+100 Or MouseY() > WindowY(3)+50) Then Window(3) = 0
+   EndIf
+   If Window(3) = 0 And Window(4) = 0 And Window(5) = 0 And Window(6) = 0 Then SaveTarget = 0
+   `--------------------------------- Window 4 : Delete Prompt ----------------------------------
+   If Window(4) > 0
+      DrawWindow(4)
+      Center Text WindowX(4)+100,WindowY(4)+30,"Are you sure?"
+      X = WindowX(4)+100
+      Y = WindowY(4)+50
+      B2 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B1 = Button(X-30,Y,X+30,Y+20,"No")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      If B1 = 2 Then Window(4) = 0
+      If B2 = 2
+         If Window(2) = 2 Then Window(2) = 1
+         If Window(7) = 2 Then Window(7) = 1
+         Window(4) = 0
+         CD SavePath$
+         If File Exist(Saves$(SaveTarget)+".txt") Then Delete File Saves$(SaveTarget)+".txt"
+      EndIf
+      If B3 = 2 Then Window(4) = 0
+   EndIf
+   `--------------------------------  Window 5 : Rename Textbox  --------------------------------
+   If Window(5) > 0
+      DrawWindow(5)
+      TextBox(2,WindowX(5)+5,WindowY(5)+20,WindowX(5)+320,WindowY(5)+36,20)
+      If Button(WindowX(5)+325,WindowY(5)+20,WindowX(5)+395,WindowY(5)+36,"OK") = 2
+         Window(5) = 0
+         If File Exist(TextBox$(2)+".txt")
+            Window(6) = 1
+            WindowX(6) = 300
+            WindowY(6) = 200
+         Else
+            If Window(2) = 2 Then Window(2) = 1
+            If Window(7) = 2 Then Window(7) = 1
+            CD SavePath$
+            If File Exist(Saves$(SaveTarget)+".txt")
+               Copy File Saves$(SaveTarget)+".txt",TextBox$(2)+".txt"
+               Delete File Saves$(SaveTarget)+".txt"
+            EndIf
+            TextBox$(2) = ""
+         EndIf
+      EndIf
+   EndIf
+   `-------------------------------  Window 6 : Rename Overwrite  -------------------------------
+   If Window(6) > 0
+      DrawWindow(6)
+      Center Text WindowX(6)+100,WindowY(6)+30,"Overwrite?"
+      X = WindowX(6)+100
+      Y = WindowY(6)+50
+      B2 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B1 = Button(X-30,Y,X+30,Y+20,"No")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      If B1 = 2 Then Window(6) = 0
+      If B2 = 2
+         If Window(2) = 2 Then Window(2) = 1
+         If Window(7) = 2 Then Window(7) = 1
+         Window(6) = 0
+         CD SavePath$
+         If File Exist(TextBox$(2)+".txt") Then Delete File TextBox$(2)+".txt"
+         If File Exist(Saves$(SaveTarget)+".txt")
+            Copy File Saves$(SaveTarget)+".txt",TextBox$(2)+".txt"
+            Delete File Saves$(SaveTarget)+".txt"
+         EndIf
+         TextBox$(2) = ""
+      EndIf
+      If B3 = 2 Then Window(6) = 0
+   EndIf
+   `----------------------  Window 7 is included in Window 2 : Save / Load  ---------------------
+   `--------------------------------  Window 8 : Overwrite Save?  -------------------------------
+   If Window(8) > 0
+      DrawWindow(8)
+      Center Text WindowX(8)+100,WindowY(8)+30,"Overwrite?"
+      X = WindowX(8)+100
+      Y = WindowY(8)+50
+      B1 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B2 = Button(X-30,Y,X+30,Y+20,"No")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      If B1 = 2
+         MenuSelect = 5
+         If Window(2) = 2 Then Window(2) = 1
+         If Window(7) = 2 Then Window(7) = 1
+         Window(8) = 0
+         CD SavePath$
+         If File Exist(TextBox$(1)+".txt") Then Delete File TextBox$(1)+".txt"
+         Set Window Title "Block Runner - " + TextBox$(1)
+         Open To Write 1,TextBox$(1)+".txt"
+            For Y = 1 To 30
+               String$ = ""
+               For X = 1 To 40
+                  If BlockData(X,Y,1) > 0 or BlockData(X,Y,2) > 0 Then String$ = String$ + Str$(Block(X,Y)) + "&" + Str$(BlockData(X,Y,1)) + "&" + Str$(BlockData(X,Y,2)) + ","
+                  If BlockData$(X,Y,1) <> "" Then String$ = String$ + "&File:" + BlockData$(X,Y,1)
+                  If BlockData(X,Y,1) = 0 and BlockData(X,Y,2) = 0 Then String$ = String$ + Str$(Block(X,Y)) + ","
+               Next X
+               Write String 1,String$
+            Next Y
+            Write String 1,Str$(TopBoundary)+"-"+Str$(RightBoundary)+"-"+Str$(BottomBoundary)+"-"+Str$(LeftBoundary)+"-"+Str$(BoundaryStatic)+"-"+Str$(StartingGravity)+"-"+Str$(ChooseStart)+"-"+Str$(MaxLives)
+            Write String 1,ImageOverlay$
+         Close File 1
+         TextBox$(1) = ""
+         Saved = 1
+         If Window(1) = 2 Then End
+         If Window(10) = 2 And ToLoad$ <> ""
+            If LoadLevel(ToLoad$+".txt")
+               ToLoad$ = ""
+            EndIf
+         EndIf
+         If Window(11) = 2
+            Set Window Title "Block Runner"
+            For X = 1 To 40
+               For Y = 1 To 30
+                  Block(X,Y) = 0
+                  BlockData(X,Y,1) = 0
+                  BlockData(X,Y,2) = 0
+                  BlockData$(X,Y,1) = ""
+               Next Y
+            Next X
+            ChooseStart = 1
+            MaxLives = 3
+            LeftBoundary = 1
+            TopBoundary = 2
+            RightBoundary = 1
+            BottomBoundary = 4
+            BoundaryStatic = 0
+            StartingGravity = 1
+            ImageOverlay$ = ""
+            If Image Exist(1001) Then Delete Image 1001
+            Saved = 1
+         EndIf
+         If Window(12) = 2
+            String$ = Get Clipboard$()
+            For Y = 1 To 30
+               String2$ = SplitString(String$,Chr$(13)+Chr$(10),Y)
+               For X = 1 To 40
+                  Block(X,Y) = Val(SplitString(SplitString(String2$,",",X),"&",1))
+                  BlockData(X,Y,1) = Val(SplitString(SplitString(String2$,",",X),"&",2))
+                  BlockData(X,Y,2) = Val(SplitString(SplitString(String2$,",",X),"&",3))
+                  If Len(SplitString(SplitString(String2$,",",X),"&",4)) > 5 Then BlockData$(X,Y,1) = Right$(SplitString(SplitString(String2$,",",X),"&",4),Len(SplitString(SplitString(String2$,",",X),"&",4))-5)
+               Next X
+            Next Y
+            String2$ = SplitString(String$,Chr$(13)+Chr$(10),31)
+            TopBoundary = Val(SplitString(String2$,"-",1))
+            RightBoundary = Val(SplitString(String2$,"-",2))
+            BottomBoundary = Val(SplitString(String2$,"-",3))
+            LeftBoundary = Val(SplitString(String2$,"-",4))
+            BoundaryStatic = Val(SplitString(String2$,"-",5))
+            StartingGravity = Val(SplitString(String2$,"-",6))
+            ChooseStart = Val(SplitString(String2$,"-",7))
+            MaxLives = Val(SplitString(String2$,"-",8))
+            String2$ = SplitString(String$,Chr$(13)+Chr$(10),32)
+            CD FolderPath$
+            If File Exist("Images\"+ImageOverlay2$) Then Load Image "Images\"+ImageOverlay2$,1001,1
+            CD SavePath$
+         EndIf
+      EndIf
+      If B2 = 2
+         MenuSelect = 5
+         Window(8) = 0
+      EndIf
+      If B3 = 2
+         MenuSelect = 5
+         Window(8) = 0
+      EndIf
+   EndIf
+   `-------------------------------  Window 9 : File Does Not Exist  ----------------------------
+   If Window(9) > 0
+      DrawWindow(9)
+      Center Text WindowX(9)+150,WindowY(9)+30,"Please choose a file from the list or use the"
+      Center Text WindowX(9)+150,WindowY(9)+46,"'load from clipboard' option in the 'Edit' menu."
+      X = WindowX(9)+150
+      Y = WindowY(9)+70
+      B1 = Button(X-30,Y,X+30,Y+20,"OK")
+      If B1 = 2 Then Window(9) = 0
+   EndIf
+   `------------------------  Window 10 : Save Changes Before Loading  --------------------------
+   If Window(10) = 1
+      DrawWindow(10)
+      Center Text WindowX(10)+100,WindowY(10)+30,"Save changes?"
+      X = WindowX(10)+100
+      Y = WindowY(10)+50
+      B1 = Button(X-30,Y,X+30,Y+20,"No")
+      B2 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      Ink RGB(255,255,255),0
+      If B1 = 2
+         If LoadLevel(ToLoad$+".txt")
+            ToLoad$ = ""
+         EndIf
+         Window(7) = 0
+         Window(2) = 0
+         Window(10) = 0
+         Saved = 1
+      EndIf
+      If B2 = 2
+         Window(10) = 2
+         Window(7) = 0
+         Window(2) = 1
+         WindowX(2) = 200
+         WindowY(2) = 100
+      EndIf
+      If B3 = 2 Then Window(10) = 0
+   EndIf
+   `------------------------  Window 11 : Save Changes Before Creating New  --------------------------
+   If Window(11) = 1
+      DrawWindow(11)
+      Center Text WindowX(11)+100,WindowY(11)+30,"Save changes?"
+      X = WindowX(11)+100
+      Y = WindowY(11)+50
+      B1 = Button(X-30,Y,X+30,Y+20,"No")
+      B2 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      If B1 = 2
+         Set Window Title "Block Runner"
+         For X = 1 To 40
+            For Y = 1 To 30
+               Block(X,Y) = 0
+               BlockData(X,Y,1) = 0
+               BlockData(X,Y,2) = 0
+               BlockData$(X,Y,1) = ""
+            Next Y
+         Next X
+         ChooseStart = 1
+         MaxLives = 3
+         LeftBoundary = 1
+         TopBoundary = 2
+         RightBoundary = 1
+         BottomBoundary = 4
+         BoundaryStatic = 0
+         StartingGravity = 1
+         ImageOverlay$ = ""
+         If Image Exist(1001) Then Delete Image 1001
+         Window(11) = 0
+         MenuSelect = 5
+      EndIf
+      If B2 = 2
+         Window(11) = 2
+         Window(7) = 0
+         Window(2) = 1
+         WindowX(2) = 200
+         WindowY(2) = 100
+      EndIf
+      If B3 = 2 Then Window(11) = 0
+   EndIf
+   `------------------------  Window 12 : Save Changes Before Loading From Clipboard  --------------------------
+   If Window(12) = 1
+      DrawWindow(12)
+      Center Text WindowX(12)+100,WindowY(12)+30,"Save changes?"
+      X = WindowX(12)+100
+      Y = WindowY(12)+50
+      B1 = Button(X-30,Y,X+30,Y+20,"No")
+      B2 = Button(X-95,Y,X-35,Y+20,"Yes")
+      B3 = Button(X+35,Y,X+95,Y+20,"Cancel")
+      If B1 = 2
+         String$ = Get Clipboard$()
+         For Y = 1 To 30
+            String2$ = SplitString(String$,Chr$(13)+Chr$(10),Y)
+            For X = 1 To 40
+               Block(X,Y) = Val(SplitString(SplitString(String2$,",",X),"&",1))
+               BlockData(X,Y,1) = Val(SplitString(SplitString(String2$,",",X),"&",2))
+               BlockData(X,Y,2) = Val(SplitString(SplitString(String2$,",",X),"&",3))
+               If Len(SplitString(SplitString(String2$,",",X),"&",4)) > 5 Then BlockData$(X,Y,1) = Right$(SplitString(SplitString(String2$,",",X),"&",4),Len(SplitString(SplitString(String2$,",",X),"&",4))-5)
+            Next X
+         Next Y
+         String2$ = SplitString(String$,Chr$(13)+Chr$(10),31)
+         TopBoundary = Val(SplitString(String2$,"-",1))
+         RightBoundary = Val(SplitString(String2$,"-",2))
+         BottomBoundary = Val(SplitString(String2$,"-",3))
+         LeftBoundary = Val(SplitString(String2$,"-",4))
+         BoundaryStatic = Val(SplitString(String2$,"-",5))
+         StartingGravity = Val(SplitString(String2$,"-",6))
+         ChooseStart = Val(SplitString(String2$,"-",7))
+         MaxLives = Val(SplitString(String2$,"-",8))
+         Window(12) = 0
+         Saved = 1
+      EndIf
+      If B2 = 2
+         Window(12) = 2
+         Window(7) = 0
+         Window(2) = 1
+         WindowX(2) = 200
+         WindowY(2) = 100
+      EndIf
+      If B3 = 2 Then Window(12) = 0
+   EndIf
+   `------------------------  Window 13 : Color Scheme  --------------------------
+   If Window(13) = 1
+      DrawWindow(13)
+      Center Text WindowX(13)+70,WindowY(13)+25,"Window Color 1"
+      ColorScheme(1) = DrawColorSlider(1,WindowX(13)+70,WindowY(13)+50,WindowY(13)+150)
+      Center Text WindowX(13)+210,WindowY(13)+25,"Window Color 2"
+      ColorScheme(2) = DrawColorSlider(2,WindowX(13)+210,WindowY(13)+50,WindowY(13)+150)
+      Center Text WindowX(13)+350,WindowY(13)+25,"Line Color 1"
+      ColorScheme(3) = DrawColorSlider(3,WindowX(13)+350,WindowY(13)+50,WindowY(13)+150)
+      Center Text WindowX(13)+490,WindowY(13)+25,"Line Color 2"
+      ColorScheme(4) = DrawColorSlider(4,WindowX(13)+490,WindowY(13)+50,WindowY(13)+150)
+      Center Text WindowX(13)+630,WindowY(13)+25,"Game Area"
+      ColorScheme(9) = DrawColorSlider(9,WindowX(13)+630,WindowY(13)+50,WindowY(13)+150)
+      Center Text WindowX(13)+70,WindowY(13)+200,"Left Panel Color 1"
+      ColorScheme(7) = DrawColorSlider(7,WindowX(13)+70,WindowY(13)+225,WindowY(13)+325)
+      Center Text WindowX(13)+210,WindowY(13)+200,"Left Panel Color 2"
+      ColorScheme(8) = DrawColorSlider(8,WindowX(13)+210,WindowY(13)+225,WindowY(13)+325)
+      Center Text WindowX(13)+350,WindowY(13)+200,"Text Color"
+      ColorScheme(5) = DrawColorSlider(5,WindowX(13)+350,WindowY(13)+225,WindowY(13)+325)
+      Center Text WindowX(13)+490,WindowY(13)+200,"High-Lighted Text Color"
+      ColorScheme(6) = DrawColorSlider(6,WindowX(13)+490,WindowY(13)+225,WindowY(13)+325)
+      If Button(WindowX(13)+600,WindowY(13)+275,WindowX(13)+675,WindowY(13)+325,"Default") = 2
+         ColorScheme(1) = RGB(190,190,190)
+         ColorScheme(2) = RGB(130,130,130)
+         ColorScheme(3) = RGB(255,255,255)
+         ColorScheme(4) = RGB(0,0,0)
+         ColorScheme(5) = RGB(0,0,0)
+         ColorScheme(6) = RGB(200,200,200)
+         ColorScheme(7) = RGB(125,100,15)
+         ColorScheme(8) = RGB(250,200,30)
+         ColorScheme(9) = RGB(190,190,190)
+         For S = 1 To 9
+            ColorSlider#(S,1) = RGBR(ColorScheme(S))
+            ColorSlider#(S,2) = RGBG(ColorScheme(S))
+            ColorSlider#(S,3) = RGBB(ColorScheme(S))
+         Next S
+      EndIf
+   EndIf
+   If Window(13) = 0
+      CD FolderPath$
+      Delete File "Options.cfg"
+      Open To Write 1,"Options.cfg"
+         For L = 1 To 9
+            Write String 1,Str$(RGBR(ColorScheme(L)))+","+Str$(RGBG(ColorScheme(L)))+","+Str$(RGBB(ColorScheme(L)))
+         Next L
+      Close File 1
+      Window(13) = 2
+   EndIf
+   `---{Presets on line 49}---------  Window 14 : Advanced Settings  ----------------------------------
+   If Window(14) > 0
+      DrawWindow(14)
+      `384x336 (24,22)
+      If Window(14) = 1
+         TextBox$(3) = Str$(MaxLives)
+         Window(14) = 2
+      EndIf
+      If Window(14) = 2
+         X = 1
+         For Y = 2 To 21
+            DrawBlock(Boundary(LeftBoundary),(16*(X-1))+(WindowX(14)+9),(16*(Y-1))+(WindowY(14)+25))
+         Next Y
+         Y = 1
+         For X = 2 To 23
+            DrawBlock(Boundary(TopBoundary),(16*(X-1))+(WindowX(14)+9),(16*(Y-1))+(WindowY(14)+25))
+         Next Y
+         X = 24
+         For Y = 2 To 21
+            DrawBlock(Boundary(RightBoundary),(16*(X-1))+(WindowX(14)+9),(16*(Y-1))+(WindowY(14)+25))
+         Next Y
+         Y = 22
+         For X = 2 To 23
+           DrawBlock(Boundary(BottomBoundary),(16*(X-1))+(WindowX(14)+9),(16*(Y-1))+(WindowY(14)+25))
+         Next Y
+         DrawBlock(Boundary(LeftBoundary),32+(WindowX(14)+9),168+(WindowY(14)+25))
+         If MouseLock = 0 And MouseX() > 32+(WindowX(14)+9) And MouseY() > 168+(WindowY(14)+25) And MouseX() < 16+32+(WindowX(14)+9) And MouseY() < 16+168+(WindowY(14)+25)
+            If MouseClick() = 1
+               MouseLock = 1
+               If LeftBoundary+1 > TotalBoundaries Then LeftBoundary = 0
+               LeftBoundary = LeftBoundary + 1
+            EndIf
+            If MouseClick() = 2
+               MouseLock = 1
+               If LeftBoundary-1 < 1 Then LeftBoundary = 15
+               LeftBoundary = LeftBoundary - 1
+            EndIf
+         EndIf
+         DrawBlock(Boundary(TopBoundary),184+(WindowX(14)+9),32+(WindowY(14)+25))
+         If MouseLock = 0 And MouseX() > 184+(WindowX(14)+9) And MouseY() > 32+(WindowY(14)+25) And MouseX() < 16+184+(WindowX(14)+9) And MouseY() < 16+32+(WindowY(14)+25)
+            If MouseClick() = 1
+               MouseLock = 1
+               If TopBoundary+1 > TotalBoundaries Then TopBoundary = 0
+               TopBoundary = TopBoundary + 1
+            EndIf
+            If MouseClick() = 2
+               MouseLock = 1
+               If TopBoundary-1 < 1 Then TopBoundary = 15
+               TopBoundary = TopBoundary - 1
+            EndIf
+         EndIf
+         DrawBlock(Boundary(RightBoundary),336+(WindowX(14)+9),168+(WindowY(14)+25))
+         If MouseLock = 0 And MouseX() > 336+(WindowX(14)+9) And MouseY() > 168+(WindowY(14)+25) And MouseX() < 16+336+(WindowX(14)+9) And MouseY() < 16+168+(WindowY(14)+25)
+            If MouseClick() = 1
+               MouseLock = 1
+               If RightBoundary+1 > TotalBoundaries Then RightBoundary = 0
+               RightBoundary = RightBoundary + 1
+            EndIf
+            If MouseClick() = 2
+               MouseLock = 1
+               If RightBoundary-1 < 1 Then RightBoundary = 15
+               RightBoundary = RightBoundary - 1
+            EndIf
+         EndIf
+         DrawBlock(Boundary(BottomBoundary),184+(WindowX(14)+9),304+(WindowY(14)+25))
+         If MouseLock = 0 And MouseX() > 184+(WindowX(14)+9) And MouseY() > 304+(WindowY(14)+25) And MouseX() < 16+184+(WindowX(14)+9) And MouseY() < 16+304+(WindowY(14)+25)
+            If MouseClick() = 1
+               MouseLock = 1
+               If BottomBoundary+1 > TotalBoundaries Then BottomBoundary = 0
+               BottomBoundary = BottomBoundary + 1
+            EndIf
+            If MouseClick() = 2
+               MouseLock = 1
+               If BottomBoundary-1 < 1 Then BottomBoundary = 15
+               BottomBoundary = BottomBoundary - 1
+            EndIf
+         EndIf
+         If MouseClick() = 0 Then MouseLock = 0
+         Text 50+(WindowX(14)+9),70+(WindowY(14)+25),"Boundaries Are Set At The Sides Of This Menu"
+         Text 80+(WindowX(14)+9),120+(WindowY(14)+25),"Boundaries:"
+         Text 80+(WindowX(14)+9),170+(WindowY(14)+25),"Starting Gravity Direction:"
+         Text 80+(WindowX(14)+9),220+(WindowY(14)+25),"Starting Portal: "
+         Text 80+(WindowX(14)+9),270+(WindowY(14)+25),"Number Of Extra Lives: "
+         If BoundaryStatic = 0 Then ButtonValue = Button(155+(WindowX(14)+9),119+(WindowY(14)+25),230+(WindowX(14)+9),137+(WindowY(14)+25),"Relative")
+         If BoundaryStatic = 1 Then ButtonValue = Button(155+(WindowX(14)+9),119+(WindowY(14)+25),230+(WindowX(14)+9),137+(WindowY(14)+25),"Static")
+         If MouseLock = 0 And ButtonValue = 2
+            BoundaryStatic = Toggle(BoundaryStatic) `0 -> 1, 1 -> 0
+            MouseLock = 1
+         EndIf
+         If MouseLock = 0 And MouseX() > 235+(WindowX(14)+9) And MouseY() > 170+(WindowY(14)+25) And MouseX() < 16+235+(WindowX(14)+9) And MouseY() < 16+170+(WindowY(14)+25)
+            If MouseClick() = 1
+               MouseLock = 1
+               StartingGravity = StartingGravity + 1
+               If StartingGravity > 4 Then StartingGravity = 1
+            EndIf
+            If MouseClick() = 2
+               MouseLock = 1
+               StartingGravity = StartingGravity - 1
+               If StartingGravity < 1 Then StartingGravity = 4
+            EndIf
+         EndIf
+         If ChooseStart = 0 Then ButtonValue = Button(172+(WindowX(14)+9),219+(WindowY(14)+25),247+(WindowX(14)+9),237+(WindowY(14)+25),"Random")
+         If ChooseStart = 1 Then ButtonValue = Button(172+(WindowX(14)+9),219+(WindowY(14)+25),247+(WindowX(14)+9),237+(WindowY(14)+25),"Choice")
+         If MouseLock = 0 And ButtonValue = 2
+            ChooseStart = Toggle(ChooseStart) `0 -> 1, 1 -> 0
+            MouseLock = 1
+         EndIf
+         If StartingGravity = 1 Then DrawBlock(14,235+(WindowX(14)+9),170+(WindowY(14)+25))
+         If StartingGravity = 2 Then DrawBlock(15,235+(WindowX(14)+9),170+(WindowY(14)+25))
+         If StartingGravity = 3 Then DrawBlock(16,235+(WindowX(14)+9),170+(WindowY(14)+25))
+         If StartingGravity = 4 Then DrawBlock(17,235+(WindowX(14)+9),170+(WindowY(14)+25))
+         TextBox(3,217+(WindowX(14)+9),269+(WindowY(14)+25),239+(WindowX(14)+9),287+(WindowY(14)+25),2)
+         MaxLives = Val(TextBox$(3))
+      EndIf
+   EndIf
+   `--------------------------------------------Menus------------------------------------------------------
+   `Draw Bar
+   Box 0,0,800,18,ColorScheme(2),ColorScheme(1),ColorScheme(2),ColorScheme(1)
+   Ink ColorScheme(3),0
+   Line 0,18,800,18
+   Ink ColorScheme(4),0
+   Line 0,19,800,19
+   `Place Text
+   Ink ColorScheme(5),0
+   Text 5,1,"File"
+   Text 40,1,"Edit"
+   Text 75,1,"View"
+   `Handle Selection
+   ClicksAllowed = 1
+   For W = 1 To 12
+      If Window(W) > 0 Then ClicksAllowed = 0
+   Next W
+   If Window(13) = 1 Then ClicksAllowed = 0 `specifically outside the loop because winow(13) can be 2 and clicks will be allowed
+   If Window(14) > 0 Then ClicksAllowed = 0
+   If DragWindow <> 0 Then ClicksAllowed = 0
+   If Play = 1 Then ClicksAllowed = 0
+   If MouseY() < 21
+      If (MouseX() > 2 And MouseX() < 31)
+         Ink ColorScheme(6),0
+         Text 5,1,"File"
+         If MouseClick() = 1 And ClicksAllowed = 1 Then MenuSelect = 1
+      EndIf
+      If (MouseX() > 38 And MouseX() < 67)
+         Ink ColorScheme(6),0
+         Text 40,1,"Edit"
+         If MouseClick() = 1 And ClicksAllowed = 1 Then MenuSelect = 2
+      EndIf
+      If (MouseX() > 73 And MouseX() < 102)
+         Ink ColorScheme(6),0
+         Text 75,1,"View"
+         If MouseClick() = 1 And ClicksAllowed = 1 Then MenuSelect = 3
+      EndIf
+   EndIf
+   If MenuSelect = 1
+      Box 3,1,29,102,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 4,2,28,101,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 3,18,102,102,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 4,19,101,101,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 4,2,28,100,ColorScheme(1),ColorScheme(1),ColorScheme(2),ColorScheme(2)
+      Box 27,20,100,100,ColorScheme(2),ColorScheme(2),ColorScheme(2),ColorScheme(2)
+      Ink ColorScheme(6),0
+      Text 5,1,"File"
+      If MouseY() > 20 And MouseY() < 40 `New
+         Box 27,20,100,40
+         If Mouseclick() = 1
+            If Saved = 1
+               Set Window Title "Block Runner"
+               For X = 1 To 40
+                  For Y = 1 To 30
+                     Block(X,Y) = 0
+                     BlockData(X,Y,1) = 0
+                     BlockData(X,Y,2) = 0
+                     BlockData$(X,Y,1) = ""
+                  Next Y
+               Next X
+               ChooseStart = 1
+               MaxLives = 3
+               LeftBoundary = 1
+               TopBoundary = 2
+               RightBoundary = 1
+               BottomBoundary = 4
+               BoundaryStatic = 0
+               StartingGravity = 1
+               ImageOverlay$ = ""
+               If Image Exist(1001) Then Delete Image 1001
+            Else
+               Window(11) = 1
+               WindowX(11) = 300
+               WindowY(11) = 200
+            EndIf
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 40 And MouseY() < 60 `Save
+         Box 27,40,100,60
+         If MouseClick() = 1
+            Clear Entry Buffer
+            Window(2) = 1
+            WindowX(2) = 200
+            WindowY(2) = 100
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 60 And MouseY() < 80 `Load
+         Clear Entry Buffer
+         Box 27,60,100,80
+         If MouseClick() = 1
+            Window(7) = 1
+            WindowX(7) = 200
+            WindowY(7) = 100
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 80 And MouseY() < 100 `Exit
+         Box 27,80,100,100
+         If MouseClick() = 1 And Saved = 0
+            Window(1) = 1
+            WindowX(1) = 300
+            WindowY(1) = 200
+            MenuSelect = 5
+         EndIf
+         If MouseClick() = 1 And Saved = 1 Then End
+      EndIf
+      Ink ColorScheme(5),0
+      Text 35,22,"New"
+      Text 35,42,"Save"
+      Text 35,62,"Load"
+      Text 35,82,"Exit"
+      If Not ((MouseX() > 2 And MouseY() > 0 And MouseX() < 103 And MouseY() < 103)) Then MenuSelect = 5
+   EndIf
+   If MenuSelect = 2
+      Box 38,1,65,82,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 39,2,64,81,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 38,18,227,82,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 39,19,226,81,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 39,2,64,80,ColorScheme(1),ColorScheme(1),ColorScheme(2),ColorScheme(2)
+      Box 64,20,225,80,ColorScheme(2),ColorScheme(2),ColorScheme(2),ColorScheme(2)
+      Ink ColorScheme(6),0
+      Text 40,1,"Edit"
+      If MouseY() > 20 And MouseY() < 40
+         Box 64,20,225,40
+         If MouseClick() = 1
+            String$ = ""
+            For Y = 1 To 30
+               For X = 1 To 40
+                  If BlockData(X,Y,1) > 0 or BlockData(X,Y,2) > 0 Then String$ = String$ + Str$(Block(X,Y)) + "&" + Str$(BlockData(X,Y,1)) + "&" + Str$(BlockData(X,Y,2))
+                  If BlockData$(X,Y,1) <> "" Then String$ = String$ + "&File:" + BlockData$(X,Y,1)
+                  String$ = String$ + Str$(Block(X,Y)) + ","
+               Next X
+               String$ = String$ + Chr$(13) + Chr$(10)
+            Next Y
+            String$ = String$ + Str$(TopBoundary)+"-"+Str$(RightBoundary)+"-"+Str$(BottomBoundary)+"-"+Str$(LeftBoundary)+"-"+Str$(BoundaryStatic)+"-"+Str$(StartingGravity)+"-"+Str$(ChooseStart)+"-"+Str$(MaxLives)
+            String$ = String$ + Chr$(13) + Chr$(10) + ImageOverlay$
+            Write To Clipboard String$
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 40 And MouseY() < 60
+         Box 64,40,225,60
+         If MouseClick() = 1
+            If Saved = 1
+               String$ = Get Clipboard$()
+               For Y = 1 To 30
+                  String2$ = SplitString(String$,Chr$(13)+Chr$(10),Y)
+                  For X = 1 To 40
+                     Block(X,Y) = Val(SplitString(SplitString(String2$,",",X),"&",1))
+                     BlockData(X,Y,1) = Val(SplitString(SplitString(String2$,",",X),"&",2))
+                     BlockData(X,Y,2) = Val(SplitString(SplitString(String2$,",",X),"&",3))
+                     If Len(SplitString(SplitString(String2$,",",X),"&",4)) > 5 Then BlockData$(X,Y,1) = Right$(SplitString(SplitString(String2$,",",X),"&",4),Len(SplitString(SplitString(String2$,",",X),"&",4))-5)
+                  Next X
+               Next Y
+               String2$ = SplitString(String$,Chr$(13)+Chr$(10),31)
+               TopBoundary = Val(SplitString(String2$,"-",1))
+               RightBoundary = Val(SplitString(String2$,"-",2))
+               BottomBoundary = Val(SplitString(String2$,"-",3))
+               LeftBoundary = Val(SplitString(String2$,"-",4))
+               BoundaryStatic = Val(SplitString(String2$,"-",5))
+               StartingGravity = Val(SplitString(String2$,"-",6))
+               ChooseStart = Val(SplitString(String2$,"-",7))
+               MaxLives = Val(SplitString(String2$,"-",8))
+            Else
+               Window(12) = 1
+               WindowX(12) = 300
+               WindowY(12) = 200
+            EndIf
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 60 And MouseY() < 80
+         Box 64,60,225,80
+         If MouseClick() = 1
+            Window(14) = 1
+            WindowX(14) = 200
+            WindowY(14) = 40
+            MenuSelect = 5
+         EndIf
+      EndIf
+      Ink ColorScheme(5),0
+      Text 70,22,"Copy Level To Clipboard"
+      Text 70,42,"Load Level From Clipboard"
+      Text 70,62,"Advanced Level Settings"
+      If Not ((MouseX() > 37 And MouseY() > 0 And MouseX() < 228 And MouseY() < 83)) Then MenuSelect = 5
+   EndIf
+   If MenuSelect = 3
+      Box 73,1,106,102,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 74,2,105,101,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 73,18,222,102,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box 74,19,221,101,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box 74,2,105,100,ColorScheme(1),ColorScheme(1),ColorScheme(2),ColorScheme(2)
+      Box 105,20,220,100,ColorScheme(2),ColorScheme(2),ColorScheme(2),ColorScheme(2)
+      Ink ColorScheme(6),0
+      Text 75,1,"View"
+      If MouseY() > 20 And MouseY() < 40
+         Box 105,20,220,40
+         If MouseClick() = 1
+            Grid = Toggle(Grid)
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 40 And MouseY() < 60
+         Box 105,40,220,60
+         If MouseClick() = 1
+            Window(13) = 1
+            WindowX(13) = 50
+            WindowY(13) = 50
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 60 And MouseY() < 80
+         Box 105,60,220,80
+         If MouseClick() = 1
+            TakeScreenShot = 1
+            MenuSelect = 5
+         EndIf
+      EndIf
+      If MouseY() > 80 And MouseY() < 100
+         Box 105,80,220,100
+         If MouseClick() = 1
+            ViewCoordinates = Toggle(ViewCoordinates)
+            MenuSelect = 5
+         EndIf
+      EndIf
+      Ink ColorScheme(5),0
+      Text 111,22,"Grid"
+      Text 111,42,"Color Scheme"
+      Text 111,62,"Save Screenshot"
+      Text 111,82,"Coordinates"
+      If Not ((MouseX() > 72 And MouseY() > 0 And MouseX() < 223 And MouseY() < 103)) Then MenuSelect = 5
+   EndIf
+   If MenuSelect = 5 And Mouseclick() = 0 Then MenuSelect = 0
+Return
+
+Function ClearLevelData()
+   Set Window Title "Block Runner"
+   For X = 1 To 40
+      For Y = 1 To 30
+         Block(X,Y) = 0
+         BlockData(X,Y,1) = 0
+         BlockData(X,Y,2) = 0
+         BlockData$(X,Y,1) = ""
+      Next Y
+   Next X
+   ChooseStart = 1
+   MaxLives = 3
+   LeftBoundary = 1
+   TopBoundary = 2
+   RightBoundary = 1
+   BottomBoundary = 4
+   BoundaryStatic = 0
+   StartingGravity = 1
+   ImageOverlay$ = ""
+   If Image Exist(1001) Then Delete Image 1001
+   Saved = 1
+EndFunction
+
+Function Round(Float#,DecimalPoints)
+   Integer$ = SplitString(Str$(Float#),".",1)
+   Decimal$ = SplitString(Str$(Float#),".",2)
+   Number$ = Integer$+"."+Left$(Decimal$,DecimalPoints)
+EndFunction Number$
+
+Function LoadLevel(FileName$)
+   If PlayingCampaign = 1
+      CD SavePath$+"\StoryLevels\"
+   Else
+      CD SavePath$+"\PlayerLevels\"
+   EndIf
+   Success = 1
+   If File Exist(FileName$)
+      Open To Read 1,FileName$
+         For Y = 1 To 30
+            Read String 1,String$
+            For X = 1 To 40
+               CurrentBlock$ = SplitString(String$,",",X)
+               Block(X,Y) = Val(SplitString(CurrentBlock$,"&",1))
+               BlockData(X,Y,1) = Val(SplitString(CurrentBlock$,"&",2))
+               BlockData(X,Y,2) = Val(SplitString(CurrentBlock$,"&",3))
+               BlockData$(X,Y,1) = ""
+               If Left$(SplitString(CurrentBlock$,"&",4),5) = "File:" Then BlockData$(X,Y,1) = Right$(SplitString(CurrentBlock$,"&",4),Len(SplitString(CurrentBlock$,"&",4))-5)
+            Next X
+         Next Y
+         Read String 1,String$
+         TopBoundary = Val(SplitString(String$,"-",1))
+         RightBoundary = Val(SplitString(String$,"-",2))
+         BottomBoundary = Val(SplitString(String$,"-",3))
+         LeftBoundary = Val(SplitString(String$,"-",4))
+         BoundaryStatic = Val(SplitString(String$,"-",5))
+         StartingGravity = Val(SplitString(String$,"-",6))
+         ChooseStart = Val(SplitString(String$,"-",7))
+         MaxLives = Val(SplitString(String$,"-",8))
+         Read String 1,ImageOverlay$
+         If PlayingCampaign = 1
+            CD FolderPath$+"\Images\StoryOverlays\"
+         Else
+            CD FolderPath$+"\Images\PlayerOverlays\"
+         EndIf
+         If Image Exist(1001) Then Delete Image 1001
+         Set Image Colorkey 0,255,0
+         If File Exist(ImageOverlay$) Then Load Image ImageOverlay$,1001,1
+         CD SavePath$
+      Close File 1
+   Else
+      Success = 0
+   EndIf
+EndFunction Success
+
+Function TileSpaceOpen(TileX,TileY)
+   Open = 0
+   If StationaryBlock(TileX,TileY) = 0 Then Open = 1
+   If StationaryBlock(TileX,TileY) = 18 Then Open = 1
+   If Portal(TileX,TileY) > 0 Then Open = 0
+EndFunction Open
+
+Function DrawWindow(WindowNumber)
+      X = WindowX(WindowNumber)
+      Y = WindowY(WindowNumber)
+      Width = WindowWidth(WindowNumber)
+      Height = WindowHeight(WindowNumber)
+      BarHeight = 20
+      Left = X
+      Top = Y
+      Right = X+Width
+      Bottom = Y+Height
+      Box Left,Top,Right,Bottom,ColorScheme(4),ColorScheme(4),ColorScheme(4),ColorScheme(4)
+      Box Left+1,Top+1,Right-1,Bottom-1,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+      Box Left+2,Top+2,Right-2,Bottom-2,ColorScheme(1),ColorScheme(2),ColorScheme(1),ColorScheme(2)
+      Box (Left+3),(Top+3),(Right-3),(Top+3)+BarHeight,ColorScheme(2),ColorScheme(1),ColorScheme(2),ColorScheme(1)
+      Box (Left+3),(Bottom-3)-BarHeight,(Right-3),(Bottom-3),ColorScheme(2),ColorScheme(1),ColorScheme(2),ColorScheme(1)
+      Ink ColorScheme(5),0
+      Recolor = 0
+      If MouseX() > X+(Width-20) And MouseX() < X+(Width-10) And MouseY() > Y+7 And MouseY() < Y+17
+         Ink ColorScheme(6),0
+         If MouseClick() = 1 And DragWindow = 0 Then Window(WindowNumber) = 0
+         MenuSelect = 5
+         Recolor = 1
+      EndIf
+      Line X+(Width-20),Y+7,(X+Width-10),Y+17
+      Line X+(Width-20),Y+17,(X+Width-10),Y+7
+      If Recolor = 1 Then Ink ColorScheme(5),0 : Recolor = 0
+      If MouseClick() = 1 And MouseX() > X And MouseY() > Y And MouseX() < X+Width And MouseY() < Y+BarHeight And DragWindow = 0
+         DragWindow = WindowNumber
+         OffsetX = MouseX() - X
+         OffsetY = MouseY() - Y
+      EndIf
+      If DragWindow = WindowNumber
+         WindowX(WindowNumber) = MouseX() - OffsetX
+         WindowY(WindowNumber) = MouseY() - OffsetY
+      EndIf
+EndFunction
+
+Function ScrollBar(ScrollNumber,MinY,MaxY,Items#,ItemsPerScreen#)
+   If ItemsPerScreen# > Items# Then ItemsPerScreen# = Items#
+   MinY = MinY + 16
+   MaxY = MaxY - 16
+   Length# = (MaxY-MinY)
+   Scale# = Length#/Items#
+   At# = ScrollY#(ScrollNumber)
+   In# = At#/Scale#
+   In = Int(In#)
+   ScrollHeight(ScrollNumber) = ItemsPerScreen#*Scale#
+   If Button2(ScrollLeft(ScrollNumber),MinY-17,ScrollRight(ScrollNumber),MinY-1,-1) = 2 Then ScrollY#(ScrollNumber) = ScrollY#(ScrollNumber) - Scale#
+   If Button2(ScrollLeft(ScrollNumber),MaxY+1,ScrollRight(ScrollNumber),MaxY+17,1) = 2 Then ScrollY#(ScrollNumber) = ScrollY#(ScrollNumber) + Scale#
+   If MouseZ() > ScrollMouseZ Then ScrollY#(ScrollNumber) = ScrollY#(ScrollNumber) - Scale#
+   If MouseZ() < ScrollMouseZ Then ScrollY#(ScrollNumber) = ScrollY#(ScrollNumber) + Scale#
+   ScrollMouseZ = MouseZ()
+   If ScrollY#(ScrollNumber) < 0 Then ScrollY#(ScrollNumber) = 0
+   If MinY+ScrollY#(ScrollNumber)+ScrollHeight(ScrollNumber) > MaxY Then ScrollY#(ScrollNumber) = MaxY-ScrollHeight(ScrollNumber)-MinY
+   Top = MinY+ScrollY#(ScrollNumber)
+   Bottom = MinY+ScrollY#(ScrollNumber)+ScrollHeight(ScrollNumber)
+   Left = ScrollLeft(ScrollNumber)
+   Right = ScrollRight(ScrollNumber)
+   State = 0
+   ClicksAllowed = 1
+   For W = 3 To 6
+      If Window(W) > 0 Then ClicksAllowed = 0
+   Next W
+   If DragWindow <> 0 Then ClicksAllowed = 0
+   If MouseX() => Left And MouseY() => Top And MouseX() <= Right And MouseY() <= Bottom And ClicksAllowed = 1
+      State = 1
+      If MouseClick() = 1 And DragWindow = 0
+         State = 2
+         DragWindow = 0-ScrollNumber
+         OffsetY = MouseY() - Top
+      EndIf
+   EndIf
+   If DragWindow = 0-ScrollNumber
+      ScrollY#(ScrollNumber) = MouseY() - OffsetY - MinY
+      If ScrollY#(ScrollNumber) < 0 Then ScrollY#(ScrollNumber) = 0
+      If MinY+ScrollY#(ScrollNumber)+ScrollHeight(ScrollNumber) > MaxY Then ScrollY#(ScrollNumber) = MaxY-ScrollHeight(ScrollNumber)-MinY
+      Top = MinY+ScrollY#(ScrollNumber)
+      Bottom = MinY+ScrollY#(ScrollNumber)+ScrollHeight(ScrollNumber)
+      State = 2
+   EndIf
+   XMid = (Left+Right)/2
+   YMid = (Top+Bottom)/2
+   R# = RGBR(ColorScheme(2))
+   G# = RGBG(ColorScheme(2))
+   B# = RGBB(ColorScheme(2))
+   DarkerColor = RGB(R#*0.7,G#*0.7,B#*0.7)
+   Box Left,MinY,Right+1,MaxY+1,ColorScheme(1),ColorScheme(1),ColorScheme(3),ColorScheme(3)
+   If State = 0 Then Ink ColorScheme(2),0
+   If State > 0 Then Ink DarkerColor,0
+   Line Left,Top+1,Left,Bottom-1
+   Line Right,Top+1,Right,Bottom-1
+   Dot Left+1,Top
+   Dot Right-1,Top
+   Dot Left+1,Bottom
+   Dot Right-1,Bottom
+   Line Left+2,Top,Right-2,Top
+   Line Left+2,Bottom,Right-2,Bottom
+   If State < 2 Then Box Left+1,Top+1,Right-1,Bottom-1,ColorScheme(3),ColorScheme(3),ColorScheme(1),ColorScheme(1)
+   If State = 2 Then Box Left+1,Top+1,Right-1,Bottom-1,ColorScheme(1),ColorScheme(1),ColorScheme(3),ColorScheme(3)
+   Ink ColorScheme(3),0
+   Line Left+1,Top+1,Right-1,Top+1
+   Line Left+1,Top+2,Left+1,Bottom-2
+   Line Right-1,Top+2,Right-1,Bottom-2
+   Line Left+1,Bottom-1,Right-1,Bottom-1
+   Line XMid-3,YMid-3,XMid+2,YMid-3
+   Line XMid-3,YMid-1,XMid+2,YMid-1
+   Line XMid-3,YMid+1,XMid+2,YMid+1
+   Line XMid-3,YMid+3,XMid+2,YMid+3
+   Ink ColorScheme(2),0
+   Line XMid-2,YMid-2,XMid+3,YMid-2
+   Line XMid-2,YMid-0,XMid+3,YMid-0
+   Line XMid-2,YMid+2,XMid+3,YMid+2
+   Line XMid-2,YMid+4,XMid+3,YMid+4
+EndFunction In
+
+Function Button(Left,Top,Right,Bottom,Text$)
+   State = 0
+   If MouseX() => Left And MouseY() => Top And MouseX() <= Right And MouseY() <= Bottom
+      State = 1
+      If MouseClick() = 1 Then State = 2
+   EndIf
+   Box Left+2,Top+2,Right-1,Bottom-1,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+   If State < 2 Then Ink ColorScheme(1),0
+   If State = 2 Then Ink ColorScheme(2),0
+   Line Left,Top,Right,Top
+   Line Left+1,Top+1,Right-1,Top+1
+   Line Left,Top,Left,Bottom-1
+   Line Left+1,Top+1,Left+1,Bottom-2
+   If State < 2 Then Ink ColorScheme(2),0
+   If State = 2 Then Ink ColorScheme(1),0
+   Line Right,Bottom,Left,Bottom
+   Line Right-1,Bottom-1,Left+1,Bottom-1
+   Line Right,Bottom,Right,Top+1
+   Line Right-1,Bottom-1,Right-1,Top+2
+   If State <> 1 Then Ink ColorScheme(5),0
+   If State = 1 Then Ink ColorScheme(6),0
+   Center Text ((Left+Right)/2),((Top+Bottom)/2)-8,Text$
+EndFunction State
+
+Function Button2(Left,Top,Right,Bottom,PointY)
+   MidX = (Left+Right)/2
+   MidY = (Top+Bottom)/2
+   State = 0
+   If MouseX() => Left And MouseY() => Top And MouseX() <= Right And MouseY() <= Bottom
+      State = 1
+      If MouseClick() = 1 Then State = 2
+   EndIf
+   R# = RGBR(ColorScheme(2))
+   G# = RGBG(ColorScheme(2))
+   B# = RGBB(ColorScheme(2))
+   DarkerColor = RGB(R#*0.7,G#*0.7,B#*0.7)
+   If State = 0 Then Ink ColorScheme(2),0
+   If State > 0 Then Ink DarkerColor,0
+   Line Left,Top+1,Left,Bottom-1
+   Line Right,Top+1,Right,Bottom-1
+   Dot Left+1,Top
+   Dot Right-1,Top
+   Dot Left+1,Bottom
+   Dot Right-1,Bottom
+   Line Left+2,Top,Right-2,Top
+   Line Left+2,Bottom,Right-2,Bottom
+   If State < 2 Then Box Left+1,Top+1,Right-1,Bottom-1,ColorScheme(1),ColorScheme(3),ColorScheme(1),ColorScheme(3)
+   If State = 2 Then Box Left+1,Top+1,Right-1,Bottom-1,ColorScheme(3),ColorScheme(1),ColorScheme(3),ColorScheme(1)
+   Ink ColorScheme(3),0
+   Line Left+1,Top+1,Right-1,Top+1
+   Line Left+1,Top+2,Left+1,Bottom-2
+   Line Right-1,Top+2,Right-1,Bottom-2
+   Line Left+1,Bottom-1,Right-1,Bottom-1
+   Ink ColorScheme(4),0
+   P = PointY
+   Line MidX-4,MidY-(P*1),MidX,MidY+(P*3)
+   Line MidX+4,MidY-(P*1),MidX,MidY+(P*3)
+   Line MidX-3,MidY-(P*1),MidX,MidY+(P*2)
+   Line MidX+3,MidY-(P*1),MidX,MidY+(P*2)
+   Line MidX-3,MidY-(P*2),MidX,MidY+(P*1)
+   Line MidX+3,MidY-(P*2),MidX,MidY+(P*1)
+   If State = 2
+      ScrollButtonTimer = ScrollButtonTimer + 1
+      If ScrollButtonTimer MOD 10 > 0 Then State = 3
+   Else
+      ScrollButtonTimer = -1
+   EndIf
+EndFunction State
+
+Function TextBox(TextBoxNumber,Left,Top,Right,Bottom,CharacterLimit)
+   Ink ColorScheme(4),0
+   Line Left,Top,Right,Top
+   Line Left,Top,Left,Bottom
+   Line Right,Top,Right,Bottom
+   Line Left,Bottom,Right,Bottom
+   Box Left+1,Top+1,Right,Bottom,ColorScheme(3),ColorScheme(3),ColorScheme(3),ColorScheme(3)
+   If MouseClick() = 1 And MouseX() > Left And MouseY() > Top And MouseX() < Right And MouseY() < Bottom And TextBoxSelected = 0 And DragWindow = 0
+      TextBoxSelected = TextBoxNumber
+      Clear Entry Buffer
+   EndIf
+   If MouseClick() = 1 And (MouseX() < Left Or MouseY() < Top Or MouseX() > Right Or MouseY() > Bottom)
+      TextBoxSelected = 0
+   EndIf
+   If TextBoxSelected = TextBoxNumber
+      If ReturnKey() = 1 Then TextBoxSelected = 0
+      Key$ = Entry$()
+      If Key$ = "" Then Goto NoKey
+      Clear Entry Buffer
+      If Right$(Key$,1) = Chr$(13) Then Inpu = 0:Goto NoKey
+      If Right$(Key$,1) = Chr$(8) And Len(TextBox$(TextBoxNumber)) => 1 Then TextBox$(TextBoxNumber) = Left$(TextBox$(TextBoxNumber),Len(TextBox$(TextBoxNumber)) - 1):Key$ = ""
+      If Len(TextBox$(TextBoxNumber)) => CharacterLimit Then Key$ = "" : Goto NoKey
+      TextBox$(TextBoxNumber) = TextBox$(TextBoxNumber) + Key$
+      Key$ = ""
+      NoKey:
+      If Timer() MOD 200 < 101 Then Text Left+5,((Top+Bottom)/2)-8,TextBox$(TextBoxNumber)
+      If Timer() MOD 200 > 100 Then Text Left+5,((Top+Bottom)/2)-8,TextBox$(TextBoxNumber)+"_"
+   Else
+      Text Left+5,((Top+Bottom)/2)-8,TextBox$(TextBoxNumber)
+   EndIf
+EndFunction
+
+Function DrawColorSlider(Number,X,Y1,Y2)
+   Red = Int(ColorSlider#(Number,1))
+   Green = Int(ColorSlider#(Number,2))
+   Blue = Int(ColorSlider#(Number,3))
+   Ink RGB(Red,Green,Blue),0
+   Box X-50,Y1-5,X+50,Y2+5
+   Ink RGB(255,255,255),0
+   Box X-50,Y2+5,X+50,Y2+30
+   MainX = X
+   For I = 1 To 3
+      X = MainX+(30*(I-2))
+      `Bar
+      Ink RGB(0,0,0),0
+      Box X-1,Y1-1,X+2,Y2+2
+      Ink RGB(255,255,255),0
+      Box X-0,Y1-0,X+1,Y2+1
+      `Controll
+      If MouseX() => X-10 And MouseY() => Y1 And MouseX() <= X+10 And MouseY() <= Y2 And MouseClick() = 1
+         Length# = (Y2-Y1)
+         Range# = 255
+         Rate# = (Range#/Length#)
+         Value# = (Y2 - MouseY())
+         ColorSlider#(Number,I) = Value#*Rate#
+      EndIf
+      `Marker
+      Length# = (Y2-Y1)
+      Range# = 255
+      Value# = ColorSlider#(Number,I)
+      Rate# = (Range#/Length#)
+      Y = Y2-(Value#/Rate#)
+      Ink RGB(255,255,255),0
+      Box X-5,Y-1,X+6,Y+2
+      Ink RGB(0,0,0),0
+      Line X-4,Y,X+4,Y
+      If I = 1 Then Ink RGB(255,0,0),0
+      If I = 2 Then Ink RGB(0,255,0),0
+      If I = 3 Then Ink RGB(0,0,255),0
+      Center Text X,Y2+10,Str$(Int(ColorSlider#(Number,I)))
+   Next I
+   Color = RGB(Red,Green,Blue)
+   Ink ColorScheme(5),0
+EndFunction Color
+
+Function Toggle(X)
+   If X = 0
+      X = 1
+      Goto R
+   EndIf
+   If X = 1 Then X = 0
+   R:
+EndFunction X
+
+Function DeleteFile(File$)
+   CD SavePath$
+   If File Exist(File$+".txt") Then Delete File File$+".txt"
+EndFunction
+
+Function RenameFile(File$,NewFile$)
+   CD SavePath$
+   If File Exist(File$+".txt") = 1
+      Copy File File$+".txt",NewFile$+".txt"
+      Delete File File$+".txt"
+   EndIf
+EndFunction
+
+Function SplitString(String$,Divider$,Number)
+   DLength = Len(Divider$)
+   BreaksIn = 1
+   Final$ = ""
+   For R = 1 to Len(String$)
+      C$ = Right$(Left$(String$,R),1)
+      D$ = Right$(Left$(String$,R+DLength-1),DLength)
+      If D$ = Divider$
+         BreaksIn = BreaksIn + 1
+         R = R + (DLength-1)
+      EndIf
+      If BreaksIn = Number And D$ <> Divider$ Then Final$ = Final$ + C$
+   Next R
+EndFunction Final$
+
+Function DrawBlock(BlockNumber,X,Y)
+   If BlockNumber = 26 And Play = 1
+      ` Do not draw Moving Block Stopper in Play mode
+   Else
+      If BlockNumber > 0 And BlockNumber <= NumberOfBlockTypes
+         Paste Image Image(BlockNumber,BlockAnimationStage(BlockNumber)),X,Y,1
+      EndIf
+   EndIf
+EndFunction
+
+Function ResetInitialBlockAnimations() `Call after array is declared, only call once. ...unless the array gets trashed somehow.
+   For BlockNumber = 0 To NumberOfBlockTypes
+      BlockAnimationStage(BlockNumber) = 1
+   Next BlockNumber
+EndFunction
+
+Function UpdateBlockAnimations(Loops)
+   ResetInitialBlockAnimations()
+   `BlockNumber = 1 Or BlockNumber = 2 Or BlockNumber = 4 Or BlockNumber = 13 Or BlockNumber = 18 or (BlockNumber => 19 And BlockNumber <= 22) Then DO NOTHING
+   BlockNumber = 3
+      BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 300 > 288 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 300 > 291 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 300 > 294 Then BlockAnimationStage(BlockNumber) = 4
+      If Loops MOD 300 > 297 Then BlockAnimationStage(BlockNumber) = 5
+   For BlockNumber = 5 to 7
+      BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 24 > 3 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 24 > 6 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 24 > 9 Then BlockAnimationStage(BlockNumber) = 4
+      If Loops MOD 24 > 12 Then BlockAnimationStage(BlockNumber) = 5
+      If Loops MOD 24 > 15 Then BlockAnimationStage(BlockNumber) = 4
+      If Loops MOD 24 > 18 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 24 > 21 Then BlockAnimationStage(BlockNumber) = 2
+   Next BlockNumber
+   For BlockNumber = 8 to 11
+      BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 10 > 3 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 10 > 6 Then BlockAnimationStage(BlockNumber) = 3
+   Next BlockNumber
+   BlockNumber = 12
+      BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 24 > 3 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 24 > 6 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 24 > 9 Then BlockAnimationStage(BlockNumber) = 4
+      If Loops MOD 24 > 12 Then BlockAnimationStage(BlockNumber) = 5
+      If Loops MOD 24 > 15 Then BlockAnimationStage(BlockNumber) = 6
+      If Loops MOD 24 > 18 Then BlockAnimationStage(BlockNumber) = 7
+      If Loops MOD 24 > 21 Then BlockAnimationStage(BlockNumber) = 8
+   For BlockNumber = 14 to 17
+      BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 12 > 3 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 12 > 6 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 12 > 9 Then BlockAnimationStage(BlockNumber) = 4
+   Next BlockNumber
+   BlockNumber = 24
+      If Loops MOD 8 = 0 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 8 = 1 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 8 = 2 Then BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 8 = 3 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 8 = 4 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 8 = 5 Then BlockAnimationStage(BlockNumber) = 4
+      If Loops MOD 8 = 6 Then BlockAnimationStage(BlockNumber) = 5
+      If Loops MOD 8 = 7 Then BlockAnimationStage(BlockNumber) = 4
+   BlockNumber = 25
+      If Loops MOD 12 > 0 Then BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 12 > 2 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 12 > 5 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 12 > 9 Then BlockAnimationStage(BlockNumber) = 4
+   BlockNumber = 26
+      If Loops MOD 12 > 0 Then BlockAnimationStage(BlockNumber) = 1
+      If Loops MOD 12 > 3 Then BlockAnimationStage(BlockNumber) = 2
+      If Loops MOD 12 > 6 Then BlockAnimationStage(BlockNumber) = 3
+      If Loops MOD 12 > 9 Then BlockAnimationStage(BlockNumber) = 4
+EndFunction
