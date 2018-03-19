@@ -1,5 +1,7 @@
-# block-runner-dbpro
+# Block Runner (DarkBASIC Pro Edition)
 A platformer game with built-in editor. Coded in Dark Basic Pro.
+The game is based heavily on [Block Action](http://blockaction.net/?lang=en) (requires flash).
+There is a newer version as well, you can read about it on my blog ([here](http://gpergrossi.com/blog/block-runner-ue/))
 
 ## Video
 https://www.youtube.com/watch?v=bGodnxki5uo&feature=youtu.be
