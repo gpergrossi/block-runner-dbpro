@@ -19,3 +19,8 @@ If it doesn't work for you, you'll need to compile the project for yourself. Thi
 In theory, it is possible to compile their editor with the right libraries installed on a
 Windows machine. For me, the editor precompiled in their "Install" directory at the repository's
 root worked just fine. If you need to compile their editor to get it working, good luck!
+
+## Code
+
+The source code is in "Block Runner.dba". This is a Dark Basic file, a programming language
+similar to Basic which is designed for 2D and 3D games.
